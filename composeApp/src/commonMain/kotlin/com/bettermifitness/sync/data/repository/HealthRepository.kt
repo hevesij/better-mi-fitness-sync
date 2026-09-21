@@ -48,6 +48,23 @@ sealed class SyncState {
     data class Error(val message: String) : SyncState()
 }
 
+private fun SyncProgress.withMetric(metric: String, state: SyncState): SyncProgress = when (metric) {
+    "heartRate" -> copy(heartRate = state)
+    "restingHeartRate" -> copy(restingHeartRate = state)
+    "sleep" -> copy(sleep = state)
+    "hrv" -> copy(hrv = state)
+    "steps" -> copy(steps = state)
+    "distance" -> copy(distance = state)
+    "activeCalories" -> copy(activeCalories = state)
+    "spo2" -> copy(spo2 = state)
+    "weight" -> copy(weight = state)
+    "workouts" -> copy(workouts = state)
+    "bloodPressure" -> copy(bloodPressure = state)
+    "temperature" -> copy(temperature = state)
+    "vo2Max" -> copy(vo2Max = state)
+    else -> this
+}
+
 /**
  * Orchestrates Mi fetch → parse → platform health write.
  * Each metric fails independently; one bad metric does not abort the rest.
@@ -91,9 +108,12 @@ class HealthRepository(
                 async { syncRestingHeartRate(from, to) }
             } else null
             // Sleep rows are fetched once and shared with HRV (derived from sleep payloads).
+            // Modern segments plus legacy watch reports (APK FitnessPersistKey).
             val sleepRows = if ("sleep" in enabled || "hrv" in enabled) {
                 async {
-                    fetchSemaphore.withPermit { api.getLatest("sleep", limit = 30) }
+                    fetchSemaphore.withPermit {
+                        api.getLatest("sleep,watch_night_sleep,watch_daytime_sleep", limit = 30)
+                    }
                 }
             } else null
             // Steps rows are fetched once and shared with distance (same minute stream).
@@ -102,7 +122,7 @@ class HealthRepository(
                     fetchSemaphore.withPermit { fetchAllByTime("steps", from, to) }
                 }
             } else null
-            // HR rows are fetched once and shared with workout enrichment.
+            // HR rows (continuous plus manual spot checks) fetched once, shared with workouts.
             val hrRows = if ("heart_rate" in enabled || "workouts" in enabled) {
                 async {
                     fetchSemaphore.withPermit {
@@ -114,8 +134,30 @@ class HealthRepository(
                     }
                 }
             } else null
+            val hrManualRows = if ("heart_rate" in enabled || "workouts" in enabled) {
+                async {
+                    fetchSemaphore.withPermit {
+                        try {
+                            fetchAllByTime("single_heart_rate", from, to)
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }
+                }
+            } else null
+            val hrManualLatest = if ("heart_rate" in enabled) {
+                async {
+                    try {
+                        fetchSemaphore.withPermit {
+                            api.getLatest("single_heart_rate", limit = 30)
+                        }.result?.dataList.orEmpty()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
+            } else null
             val heartRate = if ("heart_rate" in enabled) {
-                async { syncHeartRate(hrRows!!) }
+                async { syncHeartRate(hrRows!!, hrManualRows!!, hrManualLatest!!) }
             } else null
             val sleep = if ("sleep" in enabled) {
                 async { syncSleep(sleepRows!!) }
@@ -140,7 +182,7 @@ class HealthRepository(
                 async { syncWeightBidirectional() }
             } else null
             val workouts = if ("workouts" in enabled) {
-                async { syncWorkouts(from, to, hrRows!!) }
+                async { syncWorkouts(from, to, hrRows!!, hrManualRows!!) }
             } else null
             val bloodPressure = if ("blood_pressure" in enabled) {
                 async { syncBloodPressure(from, to) }
@@ -169,6 +211,8 @@ class HealthRepository(
             sleepRows?.await()
             stepsRows?.await()
             hrRows?.await()
+            hrManualRows?.await()
+            hrManualLatest?.await()
         }
 
         return SyncRunResult.from(
@@ -192,9 +236,21 @@ class HealthRepository(
 
     suspend fun syncHeartRate(from: String, to: String) {
         runMetric("heartRate") {
-            val samples = MiFitnessParsers.parseHeartRateSamples(
-                fetchAllByTime("heart_rate", from, to).map { it.toRaw() },
-            )
+            // Continuous stream plus manual spot checks (APK ManualHr = single_heart_rate,
+            // same HrItem shape, merged in FitnessSummaryConnector.TABLE_HEART_RATE).
+            val byTime = fetchAllByTime("heart_rate", from, to).map { it.toRaw() }
+            val manualByTime = try {
+                fetchAllByTime("single_heart_rate", from, to).map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val manualLatest = try {
+                api.getLatest("single_heart_rate", limit = 30).result?.dataList.orEmpty()
+                    .map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val samples = MiFitnessParsers.parseHeartRateSamples(byTime + manualByTime + manualLatest)
             if (samples.isNotEmpty()) healthWriter.writeHeartRate(samples)
             samples.size
         }
@@ -202,10 +258,14 @@ class HealthRepository(
 
     private suspend fun syncHeartRate(
         hrRows: kotlinx.coroutines.Deferred<List<HeartRateEntry>>,
+        hrManualRows: kotlinx.coroutines.Deferred<List<HeartRateEntry>>,
+        hrManualLatest: kotlinx.coroutines.Deferred<List<SleepEntry>>,
     ) {
         runMetric("heartRate") {
             val samples = MiFitnessParsers.parseHeartRateSamples(
-                hrRows.await().map { it.toRaw() },
+                hrRows.await().map { it.toRaw() } +
+                    hrManualRows.await().map { it.toRaw() } +
+                    hrManualLatest.await().map { it.toRaw() },
             )
             if (samples.isNotEmpty()) healthWriter.writeHeartRate(samples)
             samples.size
@@ -214,7 +274,8 @@ class HealthRepository(
 
     suspend fun syncSleep(from: String, to: String) {
         runMetric("sleep") {
-            val response = api.getLatest("sleep", limit = 30)
+            // Modern segments plus legacy watch reports (APK FitnessPersistKey).
+            val response = api.getLatest("sleep,watch_night_sleep,watch_daytime_sleep", limit = 30)
             val sessions = MiFitnessParsers.parseSleepSessions(
                 response.result?.dataList.orEmpty().map { it.toRaw() },
             )
@@ -236,12 +297,12 @@ class HealthRepository(
     }
 
     /**
-     * Overnight HRV from sleep JSON (`avg_hrv`). Uses the same `sleep` cloud key —
-     * devices without HRV simply yield 0 samples (success).
+     * Overnight HRV from sleep JSON (`avg_hrv`). Queries the same merged sleep
+     * keys — devices without HRV simply yield 0 samples (success).
      */
     suspend fun syncHrv(from: String, to: String) {
         runMetric("hrv") {
-            val response = api.getLatest("sleep", limit = 30)
+            val response = api.getLatest("sleep,watch_night_sleep,watch_daytime_sleep", limit = 30)
             val samples = MiFitnessParsers.parseHrvSamples(
                 response.result?.dataList.orEmpty().map { it.toRaw() },
             )
@@ -321,10 +382,22 @@ class HealthRepository(
 
     suspend fun syncSpO2(from: String, to: String) {
         runMetric("spo2") {
-            val samples = MiFitnessParsers.parseSpO2Samples(
-                fetchSemaphore.withPermit { fetchAllByTime("spo2", from, to) }
-                    .map { it.toRaw() },
-            )
+            // Continuous stream plus legacy manual spot checks (APK ManualSpo2).
+            val byTime = fetchSemaphore.withPermit { fetchAllByTime("spo2", from, to) }
+                .map { it.toRaw() }
+            val manualByTime = try {
+                fetchSemaphore.withPermit { fetchAllByTime("single_spo2", from, to) }
+                    .map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val manualLatest = try {
+                fetchSemaphore.withPermit { api.getLatest("single_spo2", limit = 30) }
+                    .result?.dataList.orEmpty().map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val samples = MiFitnessParsers.parseSpO2Samples(byTime + manualByTime + manualLatest)
             if (samples.isNotEmpty()) healthWriter.writeSpO2(samples)
             samples.size
         }
@@ -409,13 +482,19 @@ class HealthRepository(
             val parsed = MiFitnessParsers.parseWorkouts(
                 api.getSportRecordsByTime(from, to),
             )
-            // HR samples in range — attach as series when FDS record is sparse
+            // HR samples in range — attach as series when FDS record is sparse.
+            // Include manual spot checks (single_heart_rate) like the main HR sync.
             val hrRaw = try {
                 fetchAllByTime("heart_rate", from, to).map { it.toRaw() }
             } catch (_: Exception) {
                 emptyList()
             }
-            val hrSamples = MiFitnessParsers.parseHeartRateSamples(hrRaw)
+            val hrManualRaw = try {
+                fetchAllByTime("single_heart_rate", from, to).map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val hrSamples = MiFitnessParsers.parseHeartRateSamples(hrRaw + hrManualRaw)
             val sessions = enrichWorkouts(parsed, hrSamples)
             if (sessions.isNotEmpty()) healthWriter.writeWorkouts(sessions)
             sessions.size
@@ -426,14 +505,15 @@ class HealthRepository(
         from: String,
         to: String,
         hrRows: kotlinx.coroutines.Deferred<List<HeartRateEntry>>,
+        hrManualRows: kotlinx.coroutines.Deferred<List<HeartRateEntry>>,
     ) {
         runMetric("workouts") {
             val parsed = MiFitnessParsers.parseWorkouts(
                 fetchSemaphore.withPermit { api.getSportRecordsByTime(from, to) },
             )
-            // Shared HR rows — attach as series when FDS record is sparse.
+            // Shared HR rows including manual spot checks — attach when FDS is sparse.
             val hrSamples = MiFitnessParsers.parseHeartRateSamples(
-                hrRows.await().map { it.toRaw() },
+                hrRows.await().map { it.toRaw() } + hrManualRows.await().map { it.toRaw() },
             )
             val sessions = enrichWorkouts(parsed, hrSamples)
             if (sessions.isNotEmpty()) healthWriter.writeWorkouts(sessions)
@@ -492,10 +572,25 @@ class HealthRepository(
 
     suspend fun syncBloodPressure(from: String, to: String) {
         runMetric("bloodPressure") {
-            val samples = MiFitnessParsers.parseBloodPressureSamples(
-                fetchSemaphore.withPermit { fetchAllByTime("blood_pressure", from, to) }
-                    .map { it.toRaw() },
-            )
+            // Fitness key plus medical key (APK BloodPressureBiz merges both; medical rows
+            // live behind get_medical_data_by_time / get_latest_medical_data, same
+            // BloodPressureItem shape). Medical endpoints may 404 for regions/users
+            // without medical data — fall back to fitness-only.
+            val fitness = fetchSemaphore.withPermit { fetchAllByTime("blood_pressure", from, to) }
+                .map { it.toRaw() }
+            val medicalByTime = try {
+                fetchSemaphore.withPermit { fetchAllMedicalByTime("mc_blood_pressure", from, to) }
+                    .map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val medicalLatest = try {
+                fetchSemaphore.withPermit { api.getLatestMedical("mc_blood_pressure", limit = 30) }
+                    .result?.dataList.orEmpty().map { it.toRaw() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val samples = MiFitnessParsers.parseBloodPressureSamples(fitness + medicalByTime + medicalLatest)
             if (samples.isNotEmpty()) healthWriter.writeBloodPressure(samples)
             samples.size
         }
@@ -553,6 +648,25 @@ class HealthRepository(
         var pages = 0
         while (pages < maxPages) {
             val res = api.getDataByTime(key, from, to, next).result ?: break
+            all += res.dataList
+            pages++
+            if (!res.hasMore || res.nextKey.isNullOrEmpty()) break
+            next = res.nextKey
+        }
+        return all
+    }
+
+    private suspend fun fetchAllMedicalByTime(
+        key: String,
+        from: String,
+        to: String,
+        maxPages: Int = 60,
+    ): List<HeartRateEntry> {
+        val all = mutableListOf<HeartRateEntry>()
+        var next: String? = null
+        var pages = 0
+        while (pages < maxPages) {
+            val res = api.getMedicalDataByTime(key, from, to, next).result ?: break
             all += res.dataList
             pages++
             if (!res.hasMore || res.nextKey.isNullOrEmpty()) break
@@ -645,22 +759,7 @@ class HealthRepository(
 
     private suspend fun setState(metric: String, state: SyncState) {
         stateMutex.withLock {
-            _syncProgress.value = when (metric) {
-                "heartRate" -> _syncProgress.value.copy(heartRate = state)
-                "restingHeartRate" -> _syncProgress.value.copy(restingHeartRate = state)
-                "sleep" -> _syncProgress.value.copy(sleep = state)
-                "hrv" -> _syncProgress.value.copy(hrv = state)
-                "steps" -> _syncProgress.value.copy(steps = state)
-                "distance" -> _syncProgress.value.copy(distance = state)
-                "activeCalories" -> _syncProgress.value.copy(activeCalories = state)
-                "spo2" -> _syncProgress.value.copy(spo2 = state)
-                "weight" -> _syncProgress.value.copy(weight = state)
-                "workouts" -> _syncProgress.value.copy(workouts = state)
-                "bloodPressure" -> _syncProgress.value.copy(bloodPressure = state)
-                "temperature" -> _syncProgress.value.copy(temperature = state)
-                "vo2Max" -> _syncProgress.value.copy(vo2Max = state)
-                else -> _syncProgress.value
-            }
+            _syncProgress.value = _syncProgress.value.withMetric(metric, state)
         }
     }
 

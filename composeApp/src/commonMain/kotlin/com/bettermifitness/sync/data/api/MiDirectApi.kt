@@ -66,6 +66,44 @@ class MiDirectApi(private val client: MiDataClient) {
     }
 
     /**
+     * Medical by-time rows (APK `getMedicalDataByTime`). Same payload shape as
+     * fitness by-time; used for `mc_blood_pressure` / `mc_ecg`.
+     */
+    suspend fun getMedicalDataByTime(
+        key: String,
+        from: String,
+        to: String,
+        nextKey: String? = null,
+    ): FitnessResponse<HeartRateEntry> {
+        val payload = buildMap<String, Any?> {
+            put("key", key)
+            put("start_time", parseToUnix(from))
+            put("end_time", parseToUnix(to))
+            put("reverse", true)
+            if (!nextKey.isNullOrEmpty()) put("next_key", nextKey)
+        }
+        val result = client.post(
+            path = "/app/v1/data/get_medical_data_by_time",
+            payload = payload,
+        )
+        return parseDataListResponse(result)
+    }
+
+    /**
+     * Medical latest rows (APK `getLatestMedicalData`). Same shape as fitness latest.
+     */
+    suspend fun getLatestMedical(keys: String, limit: Int = 10): FitnessResponse<SleepEntry> {
+        val params = keys.split(",").map { k ->
+            mapOf("key" to k.trim(), "limit" to limit)
+        }
+        val result = client.post(
+            path = "/app/v1/data/get_latest_medical_data",
+            payload = mapOf("params" to params),
+        )
+        return parseLatestResponse(result)
+    }
+
+    /**
      * Sport / workout sessions (paginated). Separate from fitness-by-time keys.
      * Endpoint used by mi-fitness-data-bridge and Mi Fitness cloud.
      */
