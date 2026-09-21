@@ -76,6 +76,19 @@ class HealthDataNormalizerTest {
     }
 
     @Test
+    fun normalizeHeartRate_largeBatch_dedupesSinglePass() {
+        val base = 1_700_000_000L
+        val input = (0 until 10_000).map { i ->
+            HeartRateSample(timestamp = base + (i % 1_000), bpm = 60 + (i % 40))
+        }
+        val out = HealthDataNormalizer.normalizeHeartRate(input)
+        assertEquals(1_000, out.size)
+        assertTrue(out.zipWithNext().all { (a, b) -> a.timestamp < b.timestamp })
+        // Last writer for timestamp base wins: i=9000 → bpm 60+(9000%40)=60.
+        assertEquals(60, out[0].bpm)
+    }
+
+    @Test
     fun normalizeSteps_sameHour_keepsHigherCount() {
         val hour = "1700000000"
         val out = HealthDataNormalizer.normalizeSteps(

@@ -24,6 +24,9 @@ import kotlinx.serialization.json.long
 class MiDirectApi(private val client: MiDataClient) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Exposed for shared FDS downloads (session owns the underlying HTTP client). */
+    fun dataClient(): MiDataClient = client
+
     /**
      * Fetches paginated fitness data by time range (newest-first).
      * Maps Mi's raw encrypted response to [FitnessResponse].
@@ -152,13 +155,17 @@ class MiDirectApi(private val client: MiDataClient) {
     /**
      * Downloads FDS sport files (GPS + record + recover) and merges into [base].
      * Failures are non-fatal — returns [base] with whatever could be filled.
+     * Reuses one [FdsClient] for all three files so engine/TLS setup happens once.
      */
-    suspend fun enrichWorkoutDetails(base: WorkoutSession): WorkoutSession {
+    suspend fun enrichWorkoutDetails(
+        base: WorkoutSession,
+        fds: FdsClient = FdsClient(client),
+        closeFds: Boolean = true,
+    ): WorkoutSession {
         val sid = base.gpsDeviceSid ?: return base
         val ts = base.gpsTimestampSec ?: return base
         val tz = base.gpsTzIn15Min ?: base.tzIn15Min ?: return base
         val proto = base.gpsProtoType ?: return base
-        val fds = FdsClient(client)
         return try {
             var out = base
             // GPS route
@@ -170,25 +177,29 @@ class MiDirectApi(private val client: MiDataClient) {
                 if (points.size >= 2) out = out.copy(route = points)
             } catch (_: Exception) { /* optional */ }
 
-            // In-workout record series
-            try {
-                val recBytes = fds.downloadSportFile(
-                    FdsClient.SportFileRequest(sid, ts, tz, proto, FdsKeys.FILE_TYPE_RECORD),
-                )
-                val series = SportRecordBinary.parseSeries(recBytes, base.startTime)
-                out = out.copy(
-                    heartRateSeries = mergeSeries(out.heartRateSeries, series.heartRate.toTimed()),
-                    paceSeries = mergeSeries(out.paceSeries, series.paceSecPerKm.toTimed()),
-                    cadenceSeries = mergeSeries(out.cadenceSeries, series.cadenceSpm.toTimed()),
-                    speedSeries = mergeSeries(out.speedSeries, series.speedMps.toTimed()),
-                    elevationSeries = mergeSeries(out.elevationSeries, series.elevationM.toTimed()),
-                    kmSplits = if (series.kmSplits.isNotEmpty()) {
-                        series.kmSplits.map { WorkoutKmSplit(it.kilometer, it.timeSec, it.paceSecPerKm) }
-                    } else {
-                        out.kmSplits
-                    },
-                )
-            } catch (_: Exception) { /* optional */ }
+            // Skip record download when cloud HR is already dense — saves a file fetch.
+            val cloudDense = out.heartRateSeries.size >= DENSE_CLOUD_HR_SERIES
+            if (!cloudDense) {
+                // In-workout record series
+                try {
+                    val recBytes = fds.downloadSportFile(
+                        FdsClient.SportFileRequest(sid, ts, tz, proto, FdsKeys.FILE_TYPE_RECORD),
+                    )
+                    val series = SportRecordBinary.parseSeries(recBytes, base.startTime)
+                    out = out.copy(
+                        heartRateSeries = mergeSeries(out.heartRateSeries, series.heartRate.toTimed()),
+                        paceSeries = mergeSeries(out.paceSeries, series.paceSecPerKm.toTimed()),
+                        cadenceSeries = mergeSeries(out.cadenceSeries, series.cadenceSpm.toTimed()),
+                        speedSeries = mergeSeries(out.speedSeries, series.speedMps.toTimed()),
+                        elevationSeries = mergeSeries(out.elevationSeries, series.elevationM.toTimed()),
+                        kmSplits = if (series.kmSplits.isNotEmpty()) {
+                            series.kmSplits.map { WorkoutKmSplit(it.kilometer, it.timeSec, it.paceSecPerKm) }
+                        } else {
+                            out.kmSplits
+                        },
+                    )
+                } catch (_: Exception) { /* optional */ }
+            }
 
             // Recover HR after workout
             try {
@@ -202,7 +213,7 @@ class MiDirectApi(private val client: MiDataClient) {
 
             out
         } finally {
-            fds.close()
+            if (closeFds) fds.close()
         }
     }
 
@@ -246,6 +257,11 @@ class MiDirectApi(private val client: MiDataClient) {
         if (preferred.isEmpty()) return extra
         // Prefer denser series
         return if (extra.size > preferred.size) extra else preferred
+    }
+
+    companion object {
+        /** Cloud HR at/above this size skips the FDS record download (already dense). */
+        const val DENSE_CLOUD_HR_SERIES = 60
     }
 
     /**

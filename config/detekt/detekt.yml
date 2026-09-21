@@ -6,6 +6,11 @@ config:
   validation: true
 
 complexity:
+  LargeClass:
+    active: true
+    # HealthRepository is a metric orchestrator by design (one function per metric).
+    excludes:
+      - '**/data/repository/HealthRepository.kt'
   LongMethod:
     active: true
     # Compose UI screens are naturally long declarative trees.
