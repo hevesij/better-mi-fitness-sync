@@ -152,7 +152,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
             )
         }
 
-        if (records.isNotEmpty()) client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeRestingHeartRate(samples: List<HeartRateSample>) {
@@ -174,7 +174,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeSleep(sessions: List<SleepSession>) {
@@ -212,7 +212,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        if (records.isNotEmpty()) client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeSteps(records: List<StepsRecord>) {
@@ -239,7 +239,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        if (hcRecords.isNotEmpty()) client.insertRecords(hcRecords)
+        insertChunked(hcRecords)
     }
 
     actual override suspend fun writeDistance(samples: List<DistanceSample>) {
@@ -265,7 +265,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeActiveCalories(samples: List<ActiveCaloriesSample>) {
@@ -291,7 +291,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeWeight(measurements: List<WeightMeasurement>) {
@@ -313,7 +313,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(weightRecords)
+        insertChunked(weightRecords)
         val fatRecords = clean.mapNotNull { m ->
             val fat = m.bodyFatPercent ?: return@mapNotNull null
             val time = Instant.ofEpochSecond(m.timestamp)
@@ -327,7 +327,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        if (fatRecords.isNotEmpty()) client.insertRecords(fatRecords)
+        insertChunked(fatRecords)
     }
 
     actual override suspend fun writeWorkouts(sessions: List<WorkoutSession>) {
@@ -360,7 +360,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeBloodPressure(samples: List<BloodPressureSample>) {
@@ -385,7 +385,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeTemperature(samples: List<TemperatureSample>) {
@@ -404,7 +404,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        if (bodyRecords.isNotEmpty()) client.insertRecords(bodyRecords)
+        insertChunked(bodyRecords)
 
         // SkinTemperatureRecord needs a baseline + deltas; write as single-point baseline.
         val skinRecords = clean.mapNotNull { s ->
@@ -430,7 +430,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        if (skinRecords.isNotEmpty()) client.insertRecords(skinRecords)
+        insertChunked(skinRecords)
     }
 
     actual override suspend fun writeVo2Max(samples: List<Vo2MaxSample>) {
@@ -453,7 +453,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun writeHrv(samples: List<HrvSample>) {
@@ -476,7 +476,7 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 ),
             )
         }
-        client.insertRecords(records)
+        insertChunked(records)
     }
 
     actual override suspend fun readLatestWeight(): WeightMeasurement? {
@@ -575,4 +575,22 @@ actual class HealthWriter(private val context: Context) : HealthStore {
             HealthDataNormalizer.MiSleepStageKind.UNKNOWN -> SleepSessionRecord.STAGE_TYPE_UNKNOWN
         }
 
+    /**
+     * Chunked insert to avoid binder/transaction limits on large batches.
+     * Record IDs and versions are unchanged — chunking only splits transport.
+     */
+    private suspend fun insertChunked(
+        records: List<androidx.health.connect.client.records.Record>,
+        chunkSize: Int = HEALTH_WRITE_CHUNK_SIZE,
+    ) {
+        if (records.isEmpty()) return
+        records.chunked(chunkSize).forEach { chunk ->
+            client.insertRecords(chunk)
+        }
+    }
+
+    companion object {
+        /** Transport batch size for Health Connect inserts (workouts use 50 for route-heavy batches). */
+        const val HEALTH_WRITE_CHUNK_SIZE = 300
+    }
 }

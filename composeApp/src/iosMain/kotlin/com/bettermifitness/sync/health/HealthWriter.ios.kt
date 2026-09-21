@@ -604,19 +604,29 @@ actual class HealthWriter : HealthStore {
     }
 
 
-    private suspend fun saveSamples(samples: List<Any>) {
+    private suspend fun saveSamples(
+        samples: List<Any>,
+        chunkSize: Int = IOS_SAVE_CHUNK_SIZE,
+    ) {
         if (samples.isEmpty()) return
-        suspendCoroutine { continuation ->
-            @Suppress("UNCHECKED_CAST")
-            healthStore.saveObjects(samples as List<platform.HealthKit.HKObject>) { success, error ->
-                if (success) {
-                    continuation.resume(Unit)
-                } else {
-                    continuation.resumeWithException(
-                        Exception(error?.localizedDescription ?: "Failed to save health data")
-                    )
+        samples.chunked(chunkSize).forEach { chunk ->
+            suspendCoroutine { continuation ->
+                @Suppress("UNCHECKED_CAST")
+                healthStore.saveObjects(chunk as List<platform.HealthKit.HKObject>) { success, error ->
+                    if (success) {
+                        continuation.resume(Unit)
+                    } else {
+                        continuation.resumeWithException(
+                            Exception(error?.localizedDescription ?: "Failed to save health data"),
+                        )
+                    }
                 }
             }
         }
+    }
+
+    companion object {
+        /** Transport batch size for HealthKit saves (record IDs unchanged). */
+        const val IOS_SAVE_CHUNK_SIZE = 500
     }
 }
