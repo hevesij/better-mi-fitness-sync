@@ -62,14 +62,14 @@ class SettingsViewModel(
 
     private val showShortcutsHelp = AutoSyncPlatform.supportsShortcutsHelp()
 
-    private val _local = MutableStateFlow(
+    private val localState = MutableStateFlow(
         LocalSettingsState(
             bgRefreshLabel = AutoSyncPlatform.backgroundRefreshStatusLabel(),
             canTestBgRefresh = AutoSyncPlatform.supportsOpportunisticRefreshTest(),
             loggedOut = false,
         ),
     )
-    private val _health = MutableStateFlow(
+    private val healthState = MutableStateFlow(
         HealthReadiness(
             available = true,
             permissionsGranted = true,
@@ -100,8 +100,8 @@ class SettingsViewModel(
         configBundle,
         lastSyncBundle,
         lastBgBundle,
-        _local,
-        _health,
+        localState,
+        healthState,
     ) { config, lastSync, lastBg, local, health ->
         SettingsUiState(
             enabledMetrics = config.first,
@@ -135,8 +135,8 @@ class SettingsViewModel(
         started = SharingStarted.Eagerly,
         initialValue = SettingsUiState(
             prefsReady = false,
-            bgRefreshLabel = _local.value.bgRefreshLabel,
-            canTestBgRefresh = _local.value.canTestBgRefresh,
+            bgRefreshLabel = localState.value.bgRefreshLabel,
+            canTestBgRefresh = localState.value.canTestBgRefresh,
             showShortcutsHelp = showShortcutsHelp,
             healthServiceName = healthAvailability.healthServiceName(),
         ),
@@ -149,9 +149,9 @@ class SettingsViewModel(
     fun refreshHealth() {
         viewModelScope.launch {
             try {
-                _health.value = healthAvailability.readiness()
+                healthState.value = healthAvailability.readiness()
             } catch (_: Exception) {
-                _health.value = HealthReadiness(
+                healthState.value = HealthReadiness(
                     available = false,
                     permissionsGranted = false,
                     serviceName = healthAvailability.healthServiceName(),
@@ -199,15 +199,15 @@ class SettingsViewModel(
     }
 
     fun runBackgroundRefreshTest() {
-        if (_local.value.bgTestRunning) return
+        if (localState.value.bgTestRunning) return
         if (!uiState.value.autoSync) return
 
-        _local.update {
+        localState.update {
             it.copy(bgTestRunning = true, bgTestStatus = L10n.text(L10n.settingsRunningRefresh))
         }
         AutoSyncPlatform.runOpportunisticRefreshTest { status ->
             viewModelScope.launch {
-                _local.update {
+                localState.update {
                     it.copy(
                         bgTestRunning = false,
                         bgTestStatus = mapBgTestStatus(status),
@@ -221,12 +221,12 @@ class SettingsViewModel(
         viewModelScope.launch {
             tokenStore.clear()
             session.clear()
-            _local.update { it.copy(loggedOut = true) }
+            localState.update { it.copy(loggedOut = true) }
         }
     }
 
     fun consumeLoggedOut() {
-        _local.update { it.copy(loggedOut = false) }
+        localState.update { it.copy(loggedOut = false) }
     }
 
     private fun mapBgTestStatus(status: String): String = when (status) {

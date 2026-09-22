@@ -18,7 +18,6 @@ import kotlin.time.Clock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -78,8 +77,8 @@ class HealthRepository(
     private val session: MiSessionManager,
     private val healthWriter: HealthStore,
 ) : HealthSyncRunner {
-    private val _syncProgress = MutableStateFlow(SyncProgress())
-    override val syncProgress: StateFlow<SyncProgress> = _syncProgress.asStateFlow()
+    override val syncProgress: StateFlow<SyncProgress>
+        field = MutableStateFlow(SyncProgress())
     private val api get() = session.api
 
     private var authRefreshTried = false
@@ -101,7 +100,7 @@ class HealthRepository(
         lastRefreshUserMessage = null
         lastRefreshRetryable = false
         retryableFailures.clear()
-        _syncProgress.value = SyncProgress()
+        syncProgress.value = SyncProgress()
 
         supervisorScope {
             val resting = if ("resting_heart_rate" in enabled) {
@@ -216,7 +215,7 @@ class HealthRepository(
         }
 
         return SyncRunResult.from(
-            progress = _syncProgress.value,
+            progress = syncProgress.value,
             metricKeys = enabled,
             retryableFlags = retryableFailures.toList(),
             authFailure = sawAuthFailure,
@@ -634,7 +633,7 @@ class HealthRepository(
     }
 
     override fun resetProgress() {
-        _syncProgress.value = SyncProgress()
+        syncProgress.value = SyncProgress()
     }
 
     private suspend fun fetchAllByTime(
@@ -759,7 +758,7 @@ class HealthRepository(
 
     private suspend fun setState(metric: String, state: SyncState) {
         stateMutex.withLock {
-            _syncProgress.value = _syncProgress.value.withMetric(metric, state)
+            syncProgress.value = syncProgress.value.withMetric(metric, state)
         }
     }
 

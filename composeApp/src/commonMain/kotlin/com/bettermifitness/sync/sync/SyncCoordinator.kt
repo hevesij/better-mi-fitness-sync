@@ -14,7 +14,6 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 
@@ -49,13 +48,13 @@ class SyncCoordinator(
     )
 
     private val runMutex = Mutex()
-    private val _isRunning = MutableStateFlow(false)
     /** True while a [run] holds the single-flight lock (including permission prompts). */
-    val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+    val isRunning: StateFlow<Boolean>
+        field = MutableStateFlow(false)
 
-    private val _lastOutcome = MutableStateFlow<SyncOutcome?>(null)
     /** Last finished outcome (not [SyncOutcome.AlreadyRunning]). */
-    val lastOutcome: StateFlow<SyncOutcome?> = _lastOutcome.asStateFlow()
+    val lastOutcome: StateFlow<SyncOutcome?>
+        field = MutableStateFlow(null)
 
     /**
      * @param rangeDaysOverride when > 0, overrides user range (e.g. BG 1-day refresh)
@@ -76,7 +75,7 @@ class SyncCoordinator(
         if (!runMutex.tryLock()) {
             return SyncOutcome.AlreadyRunning
         }
-        _isRunning.value = true
+        isRunning.value = true
         try {
             val outcome = runInternal(
                 rangeDaysOverride = rangeDaysOverride,
@@ -89,11 +88,11 @@ class SyncCoordinator(
             // Do not clobber last sync prefs when we never started work.
             if (outcome !is SyncOutcome.AlreadyRunning) {
                 recordOutcome(outcome, recordAsBackground)
-                _lastOutcome.value = outcome
+                lastOutcome.value = outcome
             }
             return outcome
         } finally {
-            _isRunning.value = false
+            isRunning.value = false
             runMutex.unlock()
         }
     }

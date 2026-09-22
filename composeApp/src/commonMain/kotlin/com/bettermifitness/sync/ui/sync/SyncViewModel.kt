@@ -50,12 +50,12 @@ class SyncViewModel(
     private val syncCoordinator: SyncCoordinator,
 ) : ViewModel() {
 
-    private val _local = MutableStateFlow(
+    private val local = MutableStateFlow(
         LocalSyncState(healthServiceName = healthAvailability.healthServiceName()),
     )
 
     val uiState: StateFlow<SyncUiState> = combine(
-        _local,
+        local,
         repository.syncProgress,
         syncPreferences.enabledMetrics,
         syncPreferences.syncRangeDays,
@@ -143,7 +143,7 @@ class SyncViewModel(
             } else {
                 false
             }
-            _local.update {
+            local.update {
                 it.copy(
                     healthAvailable = available,
                     availabilityHint = when {
@@ -156,7 +156,7 @@ class SyncViewModel(
                 )
             }
         } catch (_: Exception) {
-            _local.update {
+            local.update {
                 it.copy(
                     healthAvailable = false,
                     availabilityHint = L10n.text(L10n.healthNotAvailable),
@@ -167,7 +167,7 @@ class SyncViewModel(
     }
 
     private suspend fun runSync() {
-        _local.update {
+        local.update {
             it.copy(
                 permissionError = null,
                 outcomeMessage = null,
@@ -186,34 +186,34 @@ class SyncViewModel(
                     // Another caller owns the run; UI already shows isSyncing via coordinator.
                 }
                 is SyncOutcome.Failed ->
-                    _local.update {
+                    local.update {
                         it.copy(
                             permissionError = outcome.message ?: L10n.text(L10n.syncFailed),
                             outcomeMessage = null,
                         )
                     }
                 SyncOutcome.HealthUnavailable ->
-                    _local.update {
+                    local.update {
                         it.copy(
                             healthAvailable = false,
                             permissionError = L10n.textFmt(L10n.syncHealthUnavailable, it.healthServiceName),
                         )
                     }
                 SyncOutcome.NotLoggedIn ->
-                    _local.update { it.copy(permissionError = L10n.text(L10n.syncNotLoggedIn)) }
+                    local.update { it.copy(permissionError = L10n.text(L10n.syncNotLoggedIn)) }
                 SyncOutcome.Skipped ->
-                    _local.update {
+                    local.update {
                         it.copy(outcomeMessage = L10n.text(L10n.syncNothingToSync))
                     }
                 SyncOutcome.Success ->
-                    _local.update {
+                    local.update {
                         it.copy(
                             outcomeMessage = L10n.text(L10n.syncAllMetricsSynced),
                             outcomeIsWarning = false,
                         )
                     }
                 is SyncOutcome.PartialSuccess ->
-                    _local.update {
+                    local.update {
                         it.copy(
                             outcomeMessage = outcome.summary,
                             outcomeIsWarning = true,
@@ -226,7 +226,7 @@ class SyncViewModel(
                 val available = healthAvailability.isAvailable()
                 val hint = healthAvailability.availabilityHint()
                 val perms = healthAvailability.hasWritePermissions()
-                _local.update {
+                local.update {
                     it.copy(
                         healthAvailable = available,
                         availabilityHint = when {

@@ -57,10 +57,10 @@ class HomeViewModel(
 ) : ViewModel() {
     private val syncPreferences: SyncPreferences get() = tokenStore.sync
 
-    private val _profile = MutableStateFlow<MeResponse?>(null)
-    private val _profileError = MutableStateFlow<String?>(null)
-    private val _loggedOut = MutableStateFlow(false)
-    private val _health = MutableStateFlow(
+    private val profileState = MutableStateFlow<MeResponse?>(null)
+    private val profileErrorState = MutableStateFlow<String?>(null)
+    private val loggedOutState = MutableStateFlow(false)
+    private val healthState = MutableStateFlow(
         HealthReadiness(
             available = true,
             permissionsGranted = true,
@@ -108,7 +108,7 @@ class HomeViewModel(
     }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        combine(_profile, _profileError, prefs, _loggedOut, _health) {
+        combine(profileState, profileErrorState, prefs, loggedOutState, healthState) {
                 profile, profileError, prefsSnap, loggedOut, health ->
             HomeUiState(
                 profile = profile,
@@ -160,27 +160,27 @@ class HomeViewModel(
     fun loadProfile() {
         viewModelScope.launch {
             if (!session.isActive) {
-                _profileError.value = L10n.text(L10n.homeSignedIn)
+                profileErrorState.value = L10n.text(L10n.homeSignedIn)
                 return@launch
             }
             try {
-                _profile.value = session.api.getMe()
-                _profileError.value = null
+                profileState.value = session.api.getMe()
+                profileErrorState.value = null
             } catch (e: MiApiException.AuthExpired) {
                 val refresh = session.refreshSessionDetailed()
                 if (refresh.isSuccess) {
                     try {
-                        _profile.value = session.api.getMe()
-                        _profileError.value = null
+                        profileState.value = session.api.getMe()
+                        profileErrorState.value = null
                         return@launch
                     } catch (retry: Exception) {
-                        _profileError.value = retry.message ?: L10n.text(L10n.homeSignedIn)
+                        profileErrorState.value = retry.message ?: L10n.text(L10n.homeSignedIn)
                         return@launch
                     }
                 }
-                _profileError.value = refresh.userMessage
+                profileErrorState.value = refresh.userMessage
             } catch (e: Exception) {
-                _profileError.value = e.message ?: L10n.text(L10n.homeSignedIn)
+                profileErrorState.value = e.message ?: L10n.text(L10n.homeSignedIn)
             }
         }
     }
@@ -188,9 +188,9 @@ class HomeViewModel(
     fun refreshHealthReadiness() {
         viewModelScope.launch {
             try {
-                _health.value = healthAvailability.readiness()
+                healthState.value = healthAvailability.readiness()
             } catch (_: Exception) {
-                _health.value = HealthReadiness(
+                healthState.value = HealthReadiness(
                     available = false,
                     permissionsGranted = false,
                     serviceName = healthAvailability.healthServiceName(),
@@ -237,12 +237,12 @@ class HomeViewModel(
         viewModelScope.launch {
             tokenStore.clear()
             session.clear()
-            _loggedOut.value = true
+            loggedOutState.value = true
         }
     }
 
     fun consumeLoggedOut() {
-        _loggedOut.value = false
+        loggedOutState.value = false
     }
 
     private data class PrefsSnapshot(
