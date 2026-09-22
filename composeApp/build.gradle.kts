@@ -10,9 +10,8 @@ plugins {
 }
 
 kotlin {
-    // AGP 9+: Android target via official Android-KMP library plugin (not com.android.application).
-    // Prefer `android { }` when AGP fully migrates; `androidLibrary` still works on 9.1.
-    androidLibrary {
+    // Android target via the official Android-KMP library plugin.
+    android {
         namespace = "com.bettermifitness.sync.shared"
         compileSdk = 37
         minSdk = 28
