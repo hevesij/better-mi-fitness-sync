@@ -13,7 +13,12 @@ kotlin {
     // Android target via the official Android-KMP library plugin.
     android {
         namespace = "com.bettermifitness.sync.shared"
-        compileSdk = 37
+        // API 37 preview platform is android-37.0 (see androidApp note).
+        compileSdk {
+            version = release(37) {
+                minorApiLevel = 0
+            }
+        }
         minSdk = 28
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)

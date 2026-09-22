@@ -15,7 +15,13 @@ val appVersionCode: Int = appVersionProp("versionCode", "VERSION_CODE", "1000003
 
 android {
     namespace = "com.bettermifitness.sync"
-    compileSdk = 37
+    // API 37 is a preview platform published as android-37.0; minorApiLevel
+    // points AGP at platforms/android-37.0 instead of android-37.
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     defaultConfig {
         applicationId = "com.bettermifitness.sync"
