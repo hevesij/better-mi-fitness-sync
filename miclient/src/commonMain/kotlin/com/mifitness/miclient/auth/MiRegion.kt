@@ -104,8 +104,8 @@ object MiRegion {
 
         // Reachable but empty: prefer login if that host is reachable, else first reachable
         val loginReachable = login != null && reachable.any { normalizeCode(it.region) == login }
-        val winner = if (loginReachable && login != null) {
-            login
+        val winner = if (loginReachable) {
+            login!!
         } else {
             selectAmong(reachable.map { normalizeCode(it.region) }, login)
         }

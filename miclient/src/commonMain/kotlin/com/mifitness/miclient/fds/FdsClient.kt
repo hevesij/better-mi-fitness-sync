@@ -40,14 +40,6 @@ class FdsClient(
         val fileType: Int = FdsKeys.FILE_TYPE_GPS,
     )
 
-    @Deprecated("Use SportFileRequest", ReplaceWith("SportFileRequest(sid, timeSec, tzIn15Min, protoType)"))
-    data class SportGpsRequest(
-        val sid: String,
-        val timeSec: Long,
-        val tzIn15Min: Int,
-        val protoType: Int,
-    )
-
     suspend fun genDownloadUrl(
         sid: String,
         timeSec: Long,
@@ -121,17 +113,6 @@ class FdsClient(
     }
 
     /** Sport GPS file (`fileType = 2`). */
-    suspend fun downloadSportGps(request: SportGpsRequest): ByteArray =
-        downloadSportFile(
-            SportFileRequest(
-                sid = request.sid,
-                timeSec = request.timeSec,
-                tzIn15Min = request.tzIn15Min,
-                protoType = request.protoType,
-                fileType = FdsKeys.FILE_TYPE_GPS,
-            ),
-        )
-
     suspend fun downloadSportGps(request: SportFileRequest): ByteArray =
         downloadSportFile(request.copy(fileType = FdsKeys.FILE_TYPE_GPS))
 
