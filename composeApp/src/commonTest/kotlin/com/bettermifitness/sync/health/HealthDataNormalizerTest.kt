@@ -123,6 +123,84 @@ class HealthDataNormalizerTest {
     }
 
     @Test
+    fun normalizeSleep_mergesSameStartFullAndTruncated() {
+        val bed = 1_700_000_000L
+        val firstWake = 1_700_001_800L
+        val fullWake = 1_700_003_600L
+        val full = SleepSession(
+            startTime = bed,
+            endTime = fullWake,
+            stages = listOf(
+                SleepStage(bed, 1_700_000_900L, 2),
+                SleepStage(1_700_000_900L, firstWake, 3),
+                SleepStage(firstWake, 1_700_002_700L, 5),
+                SleepStage(1_700_002_700L, fullWake, 3),
+            ),
+            tzIn15Min = 32,
+        )
+        val truncated = SleepSession(
+            startTime = bed,
+            endTime = firstWake,
+            stages = listOf(
+                SleepStage(bed, 1_700_000_900L, 2),
+                SleepStage(1_700_000_900L, firstWake, 3),
+            ),
+            tzIn15Min = 32,
+        )
+        // Order-independent: truncated-last (the 1.0.3 failure) and full-last.
+        for (input in listOf(listOf(full, truncated), listOf(truncated, full))) {
+            val out = HealthDataNormalizer.normalizeSleep(input)
+            assertEquals(1, out.size)
+            assertEquals(fullWake, out[0].endTime)
+            assertEquals(4, out[0].stages.size)
+            assertEquals(fullWake, out[0].stages.last().endTime)
+        }
+    }
+
+    @Test
+    fun normalizeSleep_trimsOutOfWindowStage_keepsSession() {
+        val session = SleepSession(
+            startTime = 1_700_000_000L,
+            endTime = 1_700_003_600L,
+            stages = listOf(
+                SleepStage(1_700_000_000L, 1_700_001_800L, 2),
+                SleepStage(1_700_001_800L, 1_700_003_600L, 3),
+                // Additional sleep past wake_up_time: trimmed, session survives.
+                SleepStage(1_700_003_600L, 1_700_004_000L, 3),
+            ),
+            tzIn15Min = 32,
+        )
+        val out = HealthDataNormalizer.normalizeSleep(listOf(session))
+        assertEquals(1, out.size)
+        assertEquals(2, out[0].stages.size)
+        assertEquals(1_700_003_600L, out[0].endTime)
+    }
+
+    @Test
+    fun normalizeSleep_dropsSessionOnlyWhenNoValidStages() {
+        val session = SleepSession(
+            startTime = 1_700_000_000L,
+            endTime = 1_700_003_600L,
+            stages = listOf(
+                SleepStage(1_700_002_000L, 1_700_001_000L, 2), // inverted
+            ),
+            tzIn15Min = 32,
+        )
+        val out = HealthDataNormalizer.normalizeSleep(listOf(session))
+        assertTrue(out.isEmpty())
+    }
+
+    @Test
+    fun sleepRecordVersion_growsWithEndTime() {
+        val stages = "1700000000:2,1700000900:3"
+        val truncated = HealthRecordIds.counterVersion(1_700_001_800L, stages, 32)
+        val full = HealthRecordIds.counterVersion(1_700_003_600L, stages, 32)
+        assertTrue(full > truncated)
+        // Identical re-sync stays identical (no write churn).
+        assertEquals(full, HealthRecordIds.counterVersion(1_700_003_600L, stages, 32))
+    }
+
+    @Test
     fun normalizeHrv_filtersAndDedupes() {
         val out = HealthDataNormalizer.normalizeHrv(
             listOf(

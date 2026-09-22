@@ -128,6 +128,7 @@ actual class HealthWriter : HealthStore {
             val bedEnd = NSDate.dateWithTimeIntervalSince1970(bedEndSec.toDouble())
 
             // "In Bed" sample spans the full bed period — Apple Health "Time in Bed".
+            // Version grows with end time so fuller syncs replace truncated ones.
             val inBed = HKCategorySample.categorySampleWithType(
                 type = sleepType,
                 value = HKCategoryValueSleepAnalysisInBed,
@@ -135,8 +136,7 @@ actual class HealthWriter : HealthStore {
                 endDate = bedEnd,
                 metadata = mapOf<Any?, Any?>(
                     HKMetadataKeySyncIdentifier to HealthRecordIds.sleepInBed(bedStartSec),
-                    HKMetadataKeySyncVersion to HealthRecordIds.version(
-                        bedStartSec,
+                    HKMetadataKeySyncVersion to HealthRecordIds.counterVersion(
                         bedEndSec,
                         session.startTime,
                     ),
@@ -160,8 +160,7 @@ actual class HealthWriter : HealthStore {
                     endDate = end,
                     metadata = mapOf<Any?, Any?>(
                         HKMetadataKeySyncIdentifier to HealthRecordIds.sleepStage(stage.startTime),
-                        HKMetadataKeySyncVersion to HealthRecordIds.version(
-                            stage.startTime,
+                        HKMetadataKeySyncVersion to HealthRecordIds.counterVersion(
                             stage.endTime,
                             stage.stage,
                         ),

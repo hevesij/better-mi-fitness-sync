@@ -203,11 +203,12 @@ actual class HealthWriter(private val context: Context) : HealthStore {
                 },
                 metadata = Metadata.manualEntry(
                     clientRecordId = HealthRecordIds.sleepSession(session.startTime),
-                    clientRecordVersion = HealthRecordIds.version(
-                        session.startTime,
+                    // Monotonic in end time so fuller/later syncs overwrite stale
+                    // truncated sessions (HC upsert needs a higher version).
+                    clientRecordVersion = HealthRecordIds.counterVersion(
                         session.endTime,
-                        session.tzIn15Min,
                         session.stages.joinToString { "${it.startTime}:${it.stage}" },
+                        session.tzIn15Min,
                     ),
                 ),
             )
