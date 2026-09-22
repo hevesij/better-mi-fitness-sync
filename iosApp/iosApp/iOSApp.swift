@@ -25,9 +25,12 @@ struct iOSApp: App {
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .background:
+                // Grace period so an in-flight sync can finish writing.
+                BackgroundSyncManager.beginFinishing()
                 // Re-queue only if Auto-sync is still on (OS decides when to fire).
                 AutoSyncSchedule.shared.rescheduleIfEnabled()
             case .active:
+                BackgroundSyncManager.endFinishing()
                 // Foreground auto-sync: full user-configured range when toggle is on.
                 // Joins any in-flight Shortcuts sync instead of cancelling it.
                 BackgroundSync.shared.runForegroundAutoSync { status in

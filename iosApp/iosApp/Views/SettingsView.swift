@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ComposeApp
 
 struct SettingsView: View {
@@ -92,6 +93,12 @@ struct SettingsView: View {
                     Text(L10n.settingsShortcutsHelp)
                         .font(.caption)
                         .foregroundStyle(Brand.secondaryLabel)
+                    Text(L10n.backgroundIosNote)
+                        .font(.caption)
+                        .foregroundStyle(Brand.secondaryLabel)
+                    Button(L10n.settingsOpenShortcutsAutomation) {
+                        openShortcutsAutomation()
+                    }
                 }
             }
 
@@ -133,5 +140,15 @@ struct SettingsView: View {
 
     private var creditURL: URL {
         URL(string: "https://github.com/ilyasaftr")!
+    }
+
+    private func openShortcutsAutomation() {
+        let primary = URL(string: "shortcuts://create-automation")!
+        let fallback = URL(string: "shortcuts://")!
+        if UIApplication.shared.canOpenURL(primary) {
+            UIApplication.shared.open(primary)
+        } else {
+            UIApplication.shared.open(fallback)
+        }
     }
 }

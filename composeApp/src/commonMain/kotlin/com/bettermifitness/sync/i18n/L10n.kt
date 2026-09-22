@@ -213,6 +213,8 @@ object L10n {
     val settingsLastSync get() = MR.strings.settings_last_sync
     val settingsLastBackgroundSync get() = MR.strings.settings_last_background_sync
     val settingsShortcutsHelp get() = MR.strings.settings_shortcuts_help
+    val backgroundIosNote get() = MR.strings.background_ios_note
+    val settingsOpenShortcutsAutomation get() = MR.strings.settings_open_shortcuts_automation
     val settingsLogOut get() = MR.strings.settings_log_out
     val settingsVersion get() = MR.strings.settings_version
     val settingsCredit get() = MR.strings.settings_credit

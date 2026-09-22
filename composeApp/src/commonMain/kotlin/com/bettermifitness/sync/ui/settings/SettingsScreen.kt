@@ -321,6 +321,7 @@ private fun AutoSyncCard(
 
 @Composable
 private fun ShortcutsHelpCard() {
+    val uriHandler = LocalUriHandler.current
     SettingsGroup(title = L10n.string(L10n.settingsSectionShortcuts)) {
         Text(
             L10n.string(L10n.settingsShortcutsHelp),
@@ -328,6 +329,18 @@ private fun ShortcutsHelpCard() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
         )
+        Text(
+            L10n.string(L10n.backgroundIosNote),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+        )
+        TextButton(
+            onClick = { uriHandler.openUri("shortcuts://create-automation") },
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+        ) {
+            Text(L10n.string(L10n.settingsOpenShortcutsAutomation))
+        }
     }
 }
 

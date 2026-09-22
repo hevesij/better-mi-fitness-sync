@@ -2,20 +2,29 @@ import BackgroundTasks
 import ComposeApp
 import UIKit
 
-/// Schedules and runs opportunistic background auto-sync via BGAppRefreshTask.
+/// Schedules and runs opportunistic background auto-sync.
 ///
-/// These tasks are short (~30s). The Kotlin side only syncs the **last 1 day**
-/// so the work can finish inside that budget. Full-range sync is for:
+/// Two scheduler contracts cover days one slot is skipped (both OS-gated):
+/// - BGAppRefreshTask: short (~30s) refresh.
+/// - BGProcessingTask: longer (minutes) deferred work, network-required.
+/// The Kotlin side only syncs the **last 1 day** so the work fits either budget.
+/// Full-range sync is for:
 /// - Manual "Sync Now"
 /// - Foreground auto-sync when the app is opened
 /// - Shortcuts / App Intent (`SyncBetterMiFitnessIntent`)
 ///
 /// Simulator: tasks won't fire alone — use:
 ///   e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.bettermifitness.sync.refresh"]
+///   e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.bettermifitness.sync.processing"]
 enum BackgroundSyncManager {
     static let taskIdentifier = "com.bettermifitness.sync.refresh"
+    static let processingIdentifier = "com.bettermifitness.sync.processing"
 
-    /// Registers the task handler and wires Kotlin → Swift scheduling bridges.
+    /// Finishing assertion so an in-flight foreground sync gets ~30s grace
+    /// when the app backgrounds instead of stopping mid-write.
+    private static var finishingTask: UIBackgroundTaskIdentifier = .invalid
+
+    /// Registers the task handlers and wires Kotlin → Swift scheduling bridges.
     /// Must be called during app launch.
     static func register() {
         BGTaskScheduler.shared.register(
@@ -23,6 +32,12 @@ enum BackgroundSyncManager {
             using: nil
         ) { task in
             handle(task: task as! BGAppRefreshTask)
+        }
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: processingIdentifier,
+            using: nil
+        ) { task in
+            handleProcessing(task: task as! BGProcessingTask)
         }
 
         AutoSyncBridge.shared.setHandlers(
@@ -44,29 +59,46 @@ enum BackgroundSyncManager {
         #endif
     }
 
-    /// Asks iOS to schedule the next opportunistic refresh (earliest ~15 min).
+    /// Asks iOS to schedule the next opportunistic refresh (earliest ~15 min)
+    /// plus a deferred processing run (network-required, no charger needed).
     /// iOS treats earliestBeginDate as a floor, not a guarantee.
     static func schedule() {
-        let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: processingIdentifier)
+        let refresh = BGAppRefreshTaskRequest(identifier: taskIdentifier)
+        refresh.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         do {
-            try BGTaskScheduler.shared.submit(request)
+            try BGTaskScheduler.shared.submit(refresh)
             print("[BGSync] scheduled \(taskIdentifier)")
         } catch {
             print("[BGSync] schedule failed: \(error)")
         }
+        let processing = BGProcessingTaskRequest(identifier: processingIdentifier)
+        processing.requiresNetworkConnectivity = true
+        processing.requiresExternalPower = false
+        do {
+            try BGTaskScheduler.shared.submit(processing)
+            print("[BGSync] scheduled \(processingIdentifier)")
+        } catch {
+            print("[BGSync] schedule processing failed: \(error)")
+        }
+        #if DEBUG
+        BGTaskScheduler.shared.getPendingTaskRequests { requests in
+            print("[BGSync] pending: \(requests.map(\.identifier))")
+        }
+        #endif
     }
 
-    /// Cancels a pending refresh request (e.g. auto-sync turned off).
+    /// Cancels pending requests (e.g. auto-sync turned off).
     static func cancel() {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
-        print("[BGSync] cancelled \(taskIdentifier)")
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: processingIdentifier)
+        print("[BGSync] cancelled \(taskIdentifier) + \(processingIdentifier)")
     }
 
-    /// Debug/simulator-only diagnostic. The OS permission does not indicate this app's Auto-sync state.
+    /// Diagnostic for Settings. Unlike before, Release also reports the real
+    /// OS permission so "Background App Refresh OFF" is visible on device.
     static func backgroundRefreshStatusLabel() -> String {
-        guard isDebugRefreshEnabled else { return "" }
-
         #if targetEnvironment(simulator)
         return L10n.backgroundSimulator
         #else
@@ -98,6 +130,22 @@ enum BackgroundSyncManager {
         }
     }
 
+    /// Begins the finishing assertion; call when the app backgrounds so an
+    /// in-flight sync can complete instead of stopping mid-write.
+    static func beginFinishing() {
+        guard finishingTask == .invalid else { return }
+        finishingTask = UIApplication.shared.beginBackgroundTask(withName: "finish-sync") {
+            endFinishing()
+        }
+    }
+
+    /// Ends the finishing assertion; call when the app returns to foreground.
+    static func endFinishing() {
+        guard finishingTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(finishingTask)
+        finishingTask = .invalid
+    }
+
     private static func handle(task: BGAppRefreshTask) {
         // Line up the next run only if Auto-sync is still enabled.
         AutoSyncSchedule.shared.rescheduleIfEnabled()
@@ -122,6 +170,33 @@ enum BackgroundSyncManager {
             let ok = code == BackgroundSync.shared.STATUS_SUCCESS
                 || code == BackgroundSync.shared.STATUS_SKIPPED
             print("[BGSync] opportunistic sync finished status=\(code)")
+            finish(success: ok)
+        }
+    }
+
+    private static func handleProcessing(task: BGProcessingTask) {
+        // Line up the next run only if Auto-sync is still enabled.
+        AutoSyncSchedule.shared.rescheduleIfEnabled()
+
+        var finished = false
+        func finish(success: Bool) {
+            guard !finished else { return }
+            finished = true
+            task.setTaskCompleted(success: success)
+        }
+
+        task.expirationHandler = {
+            print("[BGSync] processing task expired — cancelling in-flight sync")
+            BackgroundSync.shared.cancel()
+            finish(success: false)
+        }
+
+        // Same 1-day path as BGAppRefresh; processing just gets minutes of budget.
+        BackgroundSync.shared.runOpportunisticBackgroundSync { status in
+            let code = (status as? String) ?? BackgroundSync.shared.STATUS_FAILED
+            let ok = code == BackgroundSync.shared.STATUS_SUCCESS
+                || code == BackgroundSync.shared.STATUS_SKIPPED
+            print("[BGSync] processing sync finished status=\(code)")
             finish(success: ok)
         }
     }
