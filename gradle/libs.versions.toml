@@ -1,14 +1,14 @@
 [versions]
-# Toolchain — latest stable within KMP compatibility matrix (Kotlin 2.4.10 → AGP ≤9.1.0, Gradle ≤9.5.0)
-kotlin = "2.4.10"
-compose-multiplatform = "1.11.1"
-# Material3 multiplatform artifact line for CMP 1.11.x (see CMP 1.11 deps table)
-compose-material3 = "1.11.0-alpha07"
-agp = "9.1.0"
+# Toolchain — Kotlin 2.4.20 + CMP 1.12.1 (stable) + AGP 9.1.1 + Gradle 9.7.1
+kotlin = "2.4.20"
+compose-multiplatform = "1.12.1"
+# Material3 multiplatform artifact line for CMP 1.12.x (see CMP 1.12.1 deps table)
+compose-material3 = "1.12.0-alpha03"
+agp = "9.1.1"
 jetbrains-navigation = "2.9.2"
 
 # Networking / kotlinx
-ktor = "3.5.1"
+ktor = "3.6.0"
 kotlinx-serialization = "1.11.0"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
@@ -21,12 +21,12 @@ health-connect = "1.1.0"
 datastore = "1.2.1"
 androidx-activityCompose = "1.13.0"
 # JetBrains multiplatform lifecycle + Android lifecycle-process
-# 2.10.x pairs with compileSdk 36 (stable emulators). Keep Kotlin/CMP at latest.
-androidx-lifecycle = "2.10.0"
+# 2.11.0 pairs with CMP 1.12.x (see CMP 1.12.1 deps table).
+androidx-lifecycle = "2.11.0"
 work-manager = "2.11.2"
 
 # Shared i18n (Android + iOS native UI SSOT)
-moko-resources = "0.26.4"
+moko-resources = "0.27.1"
 
 [libraries]
 # Compose Multiplatform — explicit coordinates (compose.* aliases deprecated since CMP 1.10)
@@ -80,5 +80,5 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
-detekt = { id = "io.gitlab.arturbosch.detekt", version = "1.23.8" }
+detekt = { id = "dev.detekt", version = "2.0.0-alpha.6" }
 mokoResources = { id = "dev.icerock.mobile.multiplatform-resources", version.ref = "moko-resources" }

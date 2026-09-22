@@ -1,7 +1,3 @@
-build:
-  maxIssues: 0
-  excludeCorrectable: false
-
 config:
   validation: true
 
@@ -14,29 +10,33 @@ complexity:
   LongMethod:
     active: true
     # Compose UI screens are naturally long declarative trees.
-    threshold: 220
+    allowedLines: 220
   LongParameterList:
     active: true
-    functionThreshold: 10
-    constructorThreshold: 10
+    allowedFunctionParameters: 10
+    allowedConstructorParameters: 10
   TooManyFunctions:
     active: false
   ComplexCondition:
     active: true
-    threshold: 5
+    allowedConditions: 5
   NestedBlockDepth:
     active: true
-    threshold: 5
+    allowedDepth: 5
   CyclomaticComplexMethod:
     active: true
     # Large when-based mappers (sport types) are intentional.
-    threshold: 50
+    allowedComplexity: 50
 
 style:
   MagicNumber:
     active: false
   WildcardImport:
     active: true
+    # moko-resources 0.27 generates 180+ string accessors as extension vals in
+    # one package; explicit imports there would be pure churn.
+    excludeImports:
+      - 'com.bettermifitness.sync.*'
   MaxLineLength:
     active: true
     maxLineLength: 140
@@ -79,7 +79,7 @@ exceptions:
   TooGenericExceptionThrown:
     active: false
 
-empty-blocks:
+empty-blocks: # was: empty-blocks in 1.x (kept); 2.0 renamed module empty -> empty-blocks
   EmptyFunctionBlock:
     active: true
     ignoreOverridden: true

@@ -11,7 +11,6 @@ import com.mifitness.miclient.auth.MiAuth
 import com.mifitness.miclient.auth.MiCredentials
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -38,8 +37,8 @@ class LoginViewModel(
     private val regionDiscovery: MiRegionDiscovery,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(LoginUiState())
-    val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<LoginUiState>
+        field = MutableStateFlow(LoginUiState())
 
     private var otpChallenge: LoginResult.OtpRequired? = null
 
@@ -50,20 +49,20 @@ class LoginViewModel(
     private var browserBackGoesToOtp: Boolean = false
 
     fun onEmailChange(value: String) {
-        _uiState.update { it.copy(email = value) }
+        uiState.update { it.copy(email = value) }
     }
 
     fun onPasswordChange(value: String) {
-        _uiState.update { it.copy(password = value) }
+        uiState.update { it.copy(password = value) }
     }
 
     fun signIn() {
-        val email = _uiState.value.email.trim()
-        val password = _uiState.value.password
+        val email = uiState.value.email.trim()
+        val password = uiState.value.password
         if (email.isBlank() || password.isBlank()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 when (val result = miAuth.login(email = email, password = password)) {
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
@@ -72,7 +71,7 @@ class LoginViewModel(
                         try {
                             result.sendOtp()
                             browserBackGoesToOtp = false
-                            _uiState.update {
+                            uiState.update {
                                 it.copy(
                                     isLoading = false,
                                     step = LoginStep.Otp,
@@ -84,7 +83,7 @@ class LoginViewModel(
                             // Rate-limit / send failure: skip OTP UI entirely.
                             browserBackGoesToOtp = false
                             otpChallenge = null
-                            _uiState.update {
+                            uiState.update {
                                 it.copy(
                                     isLoading = false,
                                     step = LoginStep.BrowserFallback,
@@ -96,7 +95,7 @@ class LoginViewModel(
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update {
+                uiState.update {
                     it.copy(isLoading = false, errorMessage = e.message ?: L10n.text(L10n.loginFailed))
                 }
             }
@@ -106,7 +105,7 @@ class LoginViewModel(
     fun verifyOtp(code: String) {
         val challenge = otpChallenge ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 val credentials = challenge.verifyOtp(code)
                 persistAndSucceed(credentials)
@@ -114,7 +113,7 @@ class LoginViewModel(
                 val msg = e.message ?: L10n.text(L10n.loginVerificationFailed)
                 if (shouldFallbackToBrowser(msg)) {
                     browserBackGoesToOtp = true
-                    _uiState.update {
+                    uiState.update {
                         it.copy(
                             isLoading = false,
                             step = LoginStep.BrowserFallback,
@@ -123,7 +122,7 @@ class LoginViewModel(
                         )
                     }
                 } else {
-                    _uiState.update { it.copy(isLoading = false, errorMessage = msg) }
+                    uiState.update { it.copy(isLoading = false, errorMessage = msg) }
                 }
             }
         }
@@ -131,12 +130,12 @@ class LoginViewModel(
 
     fun resendOtp() {
         viewModelScope.launch {
-            _uiState.update { it.copy(errorMessage = null) }
+            uiState.update { it.copy(errorMessage = null) }
             try {
                 otpChallenge?.sendOtp()
-                _uiState.update { it.copy(errorMessage = L10n.text(L10n.loginCodeResent)) }
+                uiState.update { it.copy(errorMessage = L10n.text(L10n.loginCodeResent)) }
             } catch (e: Exception) {
-                _uiState.update {
+                uiState.update {
                     it.copy(errorMessage = L10n.textFmt(L10n.loginResendFailed, e.message ?: ""))
                 }
             }
@@ -146,14 +145,14 @@ class LoginViewModel(
     fun completeBrowserLogin(callbackUrl: String) {
         val cleaned = callbackUrl.trim()
         if (cleaned.isBlank()) {
-            _uiState.update {
+            uiState.update {
                 it.copy(errorMessage = "Paste the full redirect URL from the address bar first.")
             }
             return
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 // Correct path: finish STS session from the pasted URL.
                 // Re-running password login with only deviceId still hits OTP and shows
@@ -163,8 +162,8 @@ class LoginViewModel(
             } catch (e: Exception) {
                 // Optional fallback: trusted deviceId + password (rarely works after OTP).
                 val deviceId = extractDeviceId(cleaned)
-                val email = _uiState.value.email.trim()
-                val password = _uiState.value.password
+                val email = uiState.value.email.trim()
+                val password = uiState.value.password
                 if (deviceId.isNotEmpty() && email.isNotBlank() && password.isNotBlank()) {
                     try {
                         when (
@@ -186,7 +185,7 @@ class LoginViewModel(
                         // Prefer the STS error message below.
                     }
                 }
-                _uiState.update {
+                uiState.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = e.message
@@ -200,7 +199,7 @@ class LoginViewModel(
     fun goToBrowserFallback() {
         // User left OTP intentionally (“Having trouble?”) — Back should restore OTP.
         browserBackGoesToOtp = otpChallenge != null
-        _uiState.update {
+        uiState.update {
             it.copy(step = LoginStep.BrowserFallback, errorMessage = null)
         }
     }
@@ -212,14 +211,14 @@ class LoginViewModel(
      */
     fun goBackFromBrowser() {
         if (browserBackGoesToOtp && otpChallenge != null) {
-            _uiState.update {
+            uiState.update {
                 it.copy(step = LoginStep.Otp, errorMessage = null)
             }
             return
         }
         browserBackGoesToOtp = false
         otpChallenge = null
-        _uiState.update {
+        uiState.update {
             it.copy(
                 step = LoginStep.Credentials,
                 errorMessage = null,
@@ -231,7 +230,7 @@ class LoginViewModel(
     fun goBackToCredentials() {
         otpChallenge = null
         browserBackGoesToOtp = false
-        _uiState.update {
+        uiState.update {
             it.copy(
                 step = LoginStep.Credentials,
                 errorMessage = null,
@@ -241,12 +240,12 @@ class LoginViewModel(
     }
 
     fun consumeLoginSuccess() {
-        _uiState.update { it.copy(loginSucceeded = false) }
+        uiState.update { it.copy(loginSucceeded = false) }
     }
 
     private suspend fun persistAndSucceed(credentials: MiCredentials) {
         if (credentials.passToken.isBlank()) {
-            _uiState.update {
+            uiState.update {
                 it.copy(
                     isLoading = false,
                     errorMessage = "Login did not return a passToken, so the app cannot stay " +
@@ -256,7 +255,7 @@ class LoginViewModel(
             return
         }
         if (credentials.deviceId.isBlank()) {
-            _uiState.update {
+            uiState.update {
                 it.copy(
                     isLoading = false,
                     errorMessage = "Login missing device id — try again.",
@@ -274,7 +273,7 @@ class LoginViewModel(
         } catch (_: Exception) {
             // Keep STS provisional region if probing fails entirely.
         }
-        _uiState.update {
+        uiState.update {
             it.copy(
                 isLoading = false,
                 loginSucceeded = true,

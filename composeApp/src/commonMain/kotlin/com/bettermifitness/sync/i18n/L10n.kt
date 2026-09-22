@@ -2,6 +2,9 @@ package com.bettermifitness.sync.i18n
 
 import androidx.compose.runtime.Composable
 import com.bettermifitness.sync.MR
+// moko-resources 0.27 generates string accessors as extension vals in one
+// package (see detekt.yml WildcardImport exclusion); explicit imports churn.
+import com.bettermifitness.sync.*
 import dev.icerock.moko.resources.StringResource
 import dev.icerock.moko.resources.compose.stringResource
 
