@@ -24,13 +24,12 @@ detekt {
     parallel = true
 }
 
-tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+tasks.withType<dev.detekt.gradle.Detekt>().configureEach {
     jvmTarget = "17"
     reports {
         html.required.set(true)
-        xml.required.set(false)
-        txt.required.set(false)
+        checkstyle.required.set(false)
         sarif.required.set(false)
-        md.required.set(false)
+        markdown.required.set(false)
     }
 }
