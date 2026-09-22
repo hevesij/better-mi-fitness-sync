@@ -98,55 +98,84 @@ object HealthDataNormalizer {
     ): List<SleepSession> {
         val byStart = LinkedHashMap<Long, SleepSession>(sessions.size)
         for (session in sessions) {
-            val start = toEpochSeconds(session.startTime)
-            val endRaw = toEpochSeconds(session.endTime)
-            if (!isPlausibleEpochSeconds(start)) continue
-            val clamped = HealthTimePolicy.clampInterval(start, endRaw, nowEpochSeconds)
-                ?: continue
-            val (clampedStart, end) = clamped
-            val stageByStart = LinkedHashMap<Long, SleepStage>()
-            var valid = true
-            for (stage in session.stages) {
-                val s = toEpochSeconds(stage.startTime)
-                val e = toEpochSeconds(stage.endTime)
-                if (e <= s) {
-                    valid = false
-                    break
-                }
-                if (s < clampedStart || e > end) {
-                    valid = false
-                    break
-                }
-                if (!HealthTimePolicy.isNotFuture(e, nowEpochSeconds)) {
-                    valid = false
-                    break
-                }
-                stageByStart[s] = SleepStage(startTime = s, endTime = e, stage = stage.stage)
-            }
-            if (!valid) continue
-            val stages = stageByStart.values.sortedBy { it.startTime }
-            val inBedStart = toEpochSeconds(session.inBedStart)
-                .takeIf { isPlausibleEpochSeconds(it) && it <= end } ?: clampedStart
-            val inBedEnd = toEpochSeconds(session.inBedEnd)
-                .takeIf { isPlausibleEpochSeconds(it) }
-                ?.let { minOf(it, end) }
-                ?: end
-            byStart[clampedStart] = SleepSession(
-                startTime = clampedStart,
-                endTime = end,
-                inBedStart = inBedStart,
-                inBedEnd = maxOf(inBedStart + 1, inBedEnd),
-                stages = stages,
-                avgHrvMs = session.avgHrvMs?.takeIf { it in 5..300 },
-                minHrvMs = session.minHrvMs?.takeIf { it in 5..300 },
-                maxHrvMs = session.maxHrvMs?.takeIf { it in 5..300 },
-                hrvAnalysisTimeSec = session.hrvAnalysisTimeSec
-                    ?.let { toEpochSeconds(it) }
-                    ?.takeIf { usablePoint(it, nowEpochSeconds) },
-                tzIn15Min = session.tzIn15Min,
-            )
+            val cleaned = cleanSleepSession(session, nowEpochSeconds) ?: continue
+            val existing = byStart[cleaned.startTime]
+            byStart[cleaned.startTime] =
+                if (existing == null) cleaned else mergeSleepSessions(existing, cleaned)
         }
         return byStart.values.sortedBy { it.startTime }
+    }
+
+    private fun cleanSleepSession(
+        session: SleepSession,
+        nowEpochSeconds: Long,
+    ): SleepSession? {
+        val start = toEpochSeconds(session.startTime)
+        val endRaw = toEpochSeconds(session.endTime)
+        if (!isPlausibleEpochSeconds(start)) return null
+        val clamped = HealthTimePolicy.clampInterval(start, endRaw, nowEpochSeconds)
+            ?: return null
+        val (clampedStart, end) = clamped
+        // Trim invalid stages (1.0.2 semantics); only drop the session when
+        // nothing valid remains.
+        val stageByStart = LinkedHashMap<Long, SleepStage>()
+        for (stage in session.stages) {
+            val s = toEpochSeconds(stage.startTime)
+            val e = toEpochSeconds(stage.endTime)
+            if (e <= s) continue
+            if (s < clampedStart || e > end) continue
+            if (!HealthTimePolicy.isNotFuture(e, nowEpochSeconds)) continue
+            stageByStart[s] = SleepStage(startTime = s, endTime = e, stage = stage.stage)
+        }
+        if (stageByStart.isEmpty()) return null
+        val stages = stageByStart.values.sortedBy { it.startTime }
+        val inBedStart = toEpochSeconds(session.inBedStart)
+            .takeIf { isPlausibleEpochSeconds(it) && it <= end } ?: clampedStart
+        val inBedEnd = toEpochSeconds(session.inBedEnd)
+            .takeIf { isPlausibleEpochSeconds(it) }
+            ?.let { minOf(it, end) }
+            ?: end
+        return SleepSession(
+            startTime = clampedStart,
+            endTime = end,
+            inBedStart = inBedStart,
+            inBedEnd = maxOf(inBedStart + 1, inBedEnd),
+            stages = stages,
+            avgHrvMs = session.avgHrvMs?.takeIf { it in 5..300 },
+            minHrvMs = session.minHrvMs?.takeIf { it in 5..300 },
+            maxHrvMs = session.maxHrvMs?.takeIf { it in 5..300 },
+            hrvAnalysisTimeSec = session.hrvAnalysisTimeSec
+                ?.let { toEpochSeconds(it) }
+                ?.takeIf { usablePoint(it, nowEpochSeconds) },
+            tzIn15Min = session.tzIn15Min,
+        )
+    }
+
+    /**
+     * Unions two sessions sharing the same start (e.g. full `sleep` row plus a
+     * first-block-only legacy watch report): stages merged by start, end
+     * extended to the latest wake, HRV kept from the first non-null source.
+     */
+    internal fun mergeSleepSessions(a: SleepSession, b: SleepSession): SleepSession {
+        val stages = (a.stages + b.stages)
+            .associateBy { it.startTime }
+            .values
+            .sortedBy { it.startTime }
+        val end = maxOf(a.endTime, b.endTime)
+        val inBedStart = minOf(a.inBedStart, b.inBedStart)
+        val inBedEnd = maxOf(a.inBedEnd, b.inBedEnd)
+        return SleepSession(
+            startTime = a.startTime,
+            endTime = end,
+            inBedStart = inBedStart,
+            inBedEnd = maxOf(inBedStart + 1, inBedEnd),
+            stages = stages,
+            avgHrvMs = a.avgHrvMs ?: b.avgHrvMs,
+            minHrvMs = a.minHrvMs ?: b.minHrvMs,
+            maxHrvMs = a.maxHrvMs ?: b.maxHrvMs,
+            hrvAnalysisTimeSec = a.hrvAnalysisTimeSec ?: b.hrvAnalysisTimeSec,
+            tzIn15Min = a.tzIn15Min ?: b.tzIn15Min,
+        )
     }
 
     fun normalizeHrv(
