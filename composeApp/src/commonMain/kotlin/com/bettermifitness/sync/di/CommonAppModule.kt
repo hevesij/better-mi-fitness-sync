@@ -22,6 +22,7 @@ import com.bettermifitness.sync.ui.settings.SettingsViewModel
 import com.bettermifitness.sync.ui.sync.SyncViewModel
 import com.mifitness.miclient.auth.MiAuth
 import org.koin.core.module.Module
+import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
 /**
@@ -68,31 +69,7 @@ fun commonAppModule(): Module = module {
             regionDiscovery = get(),
         )
     }
-    factory {
-        HomeViewModel(
-            session = get(),
-            tokenStore = get(),
-            healthAvailability = get(),
-            healthPermissions = get(),
-            syncCoordinator = get(),
-        )
-    }
-    factory {
-        SyncViewModel(
-            repository = get(),
-            healthAvailability = get(),
-            healthPermissions = get(),
-            syncPreferences = get(),
-            syncCoordinator = get(),
-        )
-    }
-    factory {
-        SettingsViewModel(
-            syncPreferences = get(),
-            healthAvailability = get(),
-            healthPermissions = get(),
-            tokenStore = get(),
-            session = get(),
-        )
-    }
+    viewModelOf(::HomeViewModel)
+    viewModelOf(::SyncViewModel)
+    viewModelOf(::SettingsViewModel)
 }

@@ -30,7 +30,10 @@ data class SyncUiState(
     val outcomeIsWarning: Boolean = false,
     val healthServiceName: String = "",
     val rangeDays: Int = 7,
-    val enabledMetrics: Set<String> = SyncPreferences.ALL_METRIC_KEYS,
+    /** Empty until prefs load — rows render only once. */
+    val enabledMetrics: Set<String> = emptySet(),
+    /** False until the first hot-snapshot emission — screens hold skeleton. */
+    val prefsReady: Boolean = false,
     val progress: SyncProgress = SyncProgress(),
     val readinessChecked: Boolean = false,
 ) {
@@ -57,10 +60,9 @@ class SyncViewModel(
     val uiState: StateFlow<SyncUiState> = combine(
         local,
         repository.syncProgress,
-        syncPreferences.enabledMetrics,
-        syncPreferences.syncRangeDays,
+        syncPreferences.snapshot,
         syncCoordinator.isRunning,
-    ) { local, progress, enabled, rangeDays, running ->
+    ) { local, progress, snap, running ->
         SyncUiState(
             // App-wide: still true after leaving and re-entering Sync.
             isSyncing = running,
@@ -70,8 +72,9 @@ class SyncViewModel(
             outcomeMessage = local.outcomeMessage,
             outcomeIsWarning = local.outcomeIsWarning,
             healthServiceName = local.healthServiceName,
-            rangeDays = rangeDays,
-            enabledMetrics = enabled,
+            rangeDays = snap.syncRangeDays,
+            enabledMetrics = snap.enabledMetrics,
+            prefsReady = snap.ready,
             progress = progress,
             readinessChecked = local.readinessChecked,
         )

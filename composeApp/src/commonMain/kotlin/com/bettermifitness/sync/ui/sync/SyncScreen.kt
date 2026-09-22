@@ -29,7 +29,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -43,15 +42,13 @@ import com.bettermifitness.sync.ui.components.PrimaryButton
 import com.bettermifitness.sync.ui.components.StickyCtaBar
 import com.bettermifitness.sync.ui.icons.AppIcon
 import com.bettermifitness.sync.ui.icons.AppIcons
-import org.koin.mp.KoinPlatform
 
 /**
  * Sync screen (parity with iOS SyncView): metric list + sticky Sync now.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SyncScreen(onBack: () -> Unit) {
-    val viewModel = remember { KoinPlatform.getKoin().get<SyncViewModel>() }
+fun SyncScreen(viewModel: SyncViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
 
     val healthName = state.healthServiceName.ifBlank { L10n.string(L10n.healthFallback) }
@@ -122,7 +119,22 @@ fun SyncScreen(onBack: () -> Unit) {
                 state.outcomeMessage?.let { CompactBanner(it, isError = false) }
             }
 
-            if (metrics.isEmpty()) {
+            if (!state.prefsReady) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 20.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+            } else if (metrics.isEmpty()) {
                 Text(
                     if (state.healthAvailable) {
                         L10n.string(L10n.syncNoMetrics)

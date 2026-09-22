@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -39,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bettermifitness.sync.i18n.L10n
 import com.bettermifitness.sync.platform.appVersionLabel
@@ -49,7 +51,6 @@ import com.bettermifitness.sync.ui.components.StatusBanner
 import com.bettermifitness.sync.ui.components.StatusTone
 import com.bettermifitness.sync.ui.icons.AppIcon
 import com.bettermifitness.sync.ui.icons.AppIcons
-import org.koin.mp.KoinPlatform
 
 private const val CREDIT_URL = "https://github.com/ilyasaftr"
 
@@ -59,8 +60,7 @@ private const val CREDIT_URL = "https://github.com/ilyasaftr"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onLogout: () -> Unit = {}) {
-    val viewModel = remember { KoinPlatform.getKoin().get<SettingsViewModel>() }
+fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit, onLogout: () -> Unit = {}) {
     val state by viewModel.uiState.collectAsState()
     val healthName = state.healthServiceName.ifBlank { L10n.string(L10n.healthFallback) }
 
@@ -421,6 +421,7 @@ private fun MetricRow(metric: SyncMetric, enabled: Boolean, onToggle: (Boolean) 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 52.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -444,6 +445,8 @@ private fun MetricRow(metric: SyncMetric, enabled: Boolean, onToggle: (Boolean) 
                 L10n.metric(metric.key),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Switch(checked = enabled, onCheckedChange = onToggle)

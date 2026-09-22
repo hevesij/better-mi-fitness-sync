@@ -26,6 +26,7 @@ import com.bettermifitness.sync.ui.login.LoginScreen
 import com.bettermifitness.sync.ui.settings.SettingsScreen
 import com.bettermifitness.sync.ui.sync.SyncScreen
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.sharedKoinViewModel
 
 private object Routes {
     const val HOME = "home"
@@ -96,21 +97,24 @@ fun NavGraph() {
                 navController = navController,
                 startDestination = Routes.HOME,
             ) {
-                composable(Routes.HOME) {
+                composable(Routes.HOME) { entry ->
                     HomeScreen(
+                        viewModel = entry.sharedKoinViewModel(navController),
                         onSyncClick = { navController.navigate(Routes.SYNC) },
                         onSettingsClick = { navController.navigate(Routes.SETTINGS) },
                         onLogout = { auth = AuthBootstrap.LoggedOut },
                     )
                 }
-                composable(Routes.SETTINGS) {
+                composable(Routes.SETTINGS) { entry ->
                     SettingsScreen(
+                        viewModel = entry.sharedKoinViewModel(navController),
                         onBack = { navController.popBackStack() },
                         onLogout = { auth = AuthBootstrap.LoggedOut },
                     )
                 }
-                composable(Routes.SYNC) {
+                composable(Routes.SYNC) { entry ->
                     SyncScreen(
+                        viewModel = entry.sharedKoinViewModel(navController),
                         onBack = { navController.popBackStack() },
                     )
                 }

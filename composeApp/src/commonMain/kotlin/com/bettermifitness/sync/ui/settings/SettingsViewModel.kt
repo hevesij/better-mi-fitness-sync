@@ -7,6 +7,7 @@ import com.bettermifitness.sync.AutoSyncPlatform
 import com.bettermifitness.sync.data.MiSessionManager
 import com.bettermifitness.sync.data.preferences.SyncPreferences
 import com.bettermifitness.sync.data.preferences.TokenStore
+import com.bettermifitness.sync.data.preferences.UserPrefsSnapshot
 import com.bettermifitness.sync.health.HealthAvailability
 import com.bettermifitness.sync.health.HealthPermissionRequester
 import com.bettermifitness.sync.health.HealthReadiness
@@ -60,6 +61,9 @@ class SettingsViewModel(
     private val session: MiSessionManager,
 ) : ViewModel() {
 
+    /** Hot snapshot: single DataStore subscription, shared with all screens. */
+    private val prefsSnapshot: StateFlow<UserPrefsSnapshot> = syncPreferences.snapshot
+
     private val showShortcutsHelp = AutoSyncPlatform.supportsShortcutsHelp()
 
     private val localState = MutableStateFlow(
@@ -91,10 +95,11 @@ class SettingsViewModel(
     ) { t, s, m -> Triple(t, s, m) }
 
     private val configBundle = combine(
-        syncPreferences.enabledMetrics,
-        syncPreferences.syncRangeDays,
-        syncPreferences.autoSync,
-    ) { e, r, a -> Triple(e, r, a) }
+        prefsSnapshot,
+    ) { snaps ->
+        val snap = snaps[0]
+        Triple(snap.enabledMetrics, snap.syncRangeDays, snap.autoSync) to snap.ready
+    }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         configBundle,
@@ -104,10 +109,10 @@ class SettingsViewModel(
         healthState,
     ) { config, lastSync, lastBg, local, health ->
         SettingsUiState(
-            enabledMetrics = config.first,
-            prefsReady = true,
-            rangeDays = config.second,
-            autoSync = config.third,
+            enabledMetrics = config.first.first,
+            prefsReady = config.second,
+            rangeDays = config.first.second,
+            autoSync = config.first.third,
             lastBackgroundSyncLabel = RelativeTime.format(lastBg.first),
             lastBackgroundStatusTitle = SyncOutcomeLabels.title(lastBg.second),
             lastBackgroundDetail = SyncOutcomeLabels.detail(lastBg.second, lastBg.third),
