@@ -135,13 +135,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: |
-            ${{ env.ANDROID_HOME }}/platforms/android-36
+            ${{ env.ANDROID_HOME }}/platforms/android-37
             ${{ env.ANDROID_HOME }}/build-tools/36.0.0
             ${{ env.ANDROID_HOME }}/licenses
-          key: android-sdk-36-buildtools-36.0.0-v3
+          key: android-sdk-37-buildtools-36.0.0-v3
           restore-keys: |
-            android-sdk-36-buildtools-36.0.0-v3
-            android-sdk-36-
+            android-sdk-37-buildtools-36.0.0-v3
+            android-sdk-37-
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -150,7 +150,7 @@ jobs:
         if: steps.cache-android-sdk.outputs.cache-hit != 'true'
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
       - name: Accept licenses (cache hit)
         if: steps.cache-android-sdk.outputs.cache-hit == 'true'

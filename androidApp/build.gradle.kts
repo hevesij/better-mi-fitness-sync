@@ -15,7 +15,7 @@ val appVersionCode: Int = appVersionProp("versionCode", "VERSION_CODE", "1000003
 
 android {
     namespace = "com.bettermifitness.sync"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.bettermifitness.sync"

@@ -14,7 +14,7 @@ kotlin {
     // Prefer `android { }` when AGP fully migrates; `androidLibrary` still works on 9.1.
     androidLibrary {
         namespace = "com.bettermifitness.sync.shared"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 28
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
