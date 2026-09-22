@@ -65,6 +65,7 @@ jobs:
         with:
           cache-read-only: false
           cache-cleanup: on-success
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Detekt
         run: ./gradlew detekt --stacktrace --build-cache --configuration-cache
@@ -119,6 +120,7 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           gradle-home-cache-includes: |
             caches
             notifications
@@ -240,6 +242,7 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: on-success
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           gradle-home-cache-includes: |
             caches
             notifications
