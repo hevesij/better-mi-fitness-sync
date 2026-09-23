@@ -114,6 +114,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         LoginStep.BrowserFallback -> BrowserFallbackStep(
             isLoading = state.isLoading,
             errorMessage = state.errorMessage,
+            loginUrl = state.browserLoginUrl.ifBlank { LOGIN_URL },
             onComplete = viewModel::completeBrowserLogin,
             onBack = {
                 // OTP if left from OTP; credentials if OTP was skipped (rate limit).
@@ -435,6 +436,7 @@ private const val LOGIN_URL =
 private fun BrowserFallbackStep(
     isLoading: Boolean,
     errorMessage: String?,
+    loginUrl: String,
     onComplete: (String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -521,7 +523,7 @@ private fun BrowserFallbackStep(
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
-                        runCatching { uriHandler.openUri(LOGIN_URL) }
+                        runCatching { uriHandler.openUri(loginUrl) }
                     },
                     enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -533,7 +535,7 @@ private fun BrowserFallbackStep(
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            clipboard.setPlainText(LOGIN_URL)
+                            clipboard.setPlainText(loginUrl)
                             urlCopied = true
                         }
                     },

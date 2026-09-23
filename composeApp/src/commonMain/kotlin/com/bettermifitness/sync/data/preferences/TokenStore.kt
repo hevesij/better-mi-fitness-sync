@@ -40,9 +40,15 @@ class TokenStore(
 
     suspend fun setSyncRangeDays(days: Int) = sync.setSyncRangeDays(days)
 
-    /** Full wipe (logout). */
+    /**
+     * Logout wipe. Keeps the stable device identity so the next sign-in is
+     * recognized as the same trusted install instead of a brand-new device.
+     */
     suspend fun clear() {
+        // Logout wipes tokens but restores a stable device id right away, so the
+        // next sign-in presents the same trusted install instead of a new device.
         dataStore.edit { it.clear() }
+        credentials.ensureDeviceId()
     }
 
     companion object {

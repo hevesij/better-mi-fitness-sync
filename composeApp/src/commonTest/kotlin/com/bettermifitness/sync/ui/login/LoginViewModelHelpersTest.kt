@@ -1,5 +1,6 @@
 package com.bettermifitness.sync.ui.login
 
+import com.mifitness.miclient.auth.MiAuth
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -41,5 +42,24 @@ class LoginViewModelHelpersTest {
         )
         assertTrue(LoginViewModel.shouldFallbackToBrowser("still require OTP"))
         assertFalse(LoginViewModel.shouldFallbackToBrowser("Invalid code"))
+    }
+
+    @Test
+    fun browserLoginUrl_bindsStableDeviceId() {
+        val deviceId = "wb_0123456789abcdef0123456789abcdef"
+        val url = MiAuth().buildLoginUrl(deviceId = deviceId)
+        assertTrue(url.contains("sid=miothealth"), "browser URL keeps STS sid: $url")
+        assertTrue(url.contains("d=$deviceId"), "browser URL reuses the stored device id: $url")
+    }
+
+    @Test
+    fun browserLoginUrl_withoutDeviceId_keepsLegacyShape() {
+        val url = MiAuth().buildLoginUrl()
+        assertTrue(
+            url == "https://account.xiaomi.com/pass/serviceLogin" +
+                "?sid=miothealth&callback=https%3A%2F%2Fsts-hlth.io.mi.com%2Fhealthapp%2Fsts" +
+                "&_locale=en",
+            "legacy URL unchanged when no device id is known: $url",
+        )
     }
 }

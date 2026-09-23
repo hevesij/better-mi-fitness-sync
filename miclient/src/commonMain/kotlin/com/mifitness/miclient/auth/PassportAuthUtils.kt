@@ -62,6 +62,31 @@ object PassportAuthUtils {
             ?.substringBefore(";")
     }
 
+    /** Cookie values passport uses to signal "this credential is gone". */
+    private val DEAD_COOKIE_VALUES = setOf("", "-", "expired", "deleted", "null")
+
+    /**
+     * Strict `Set-Cookie` lookup: matches only the cookie **name** (first `name=value` pair),
+     * skips deletion cookies (`Max-Age=0`, empty/`EXPIRED` values).
+     *
+     * Needed because passport rotates `passToken` via `Set-Cookie` on `serviceLogin`
+     * (APK merges response cookies into its header map — see `SimpleRequest.parseCookies`,
+     * then reads them with `StringContent.getHeader("passToken")`).
+     */
+    fun setCookieValue(setCookieHeaders: List<String>, name: String): String? {
+        for (header in setCookieHeaders) {
+            val firstPair = header.substringBefore(';').trim()
+            val eq = firstPair.indexOf('=')
+            if (eq <= 0) continue
+            if (!firstPair.substring(0, eq).trim().equals(name, ignoreCase = true)) continue
+            if (Regex("max-age\\s*=\\s*0(\\D|$)", RegexOption.IGNORE_CASE).containsMatchIn(header)) continue
+            val value = firstPair.substring(eq + 1).trim().trim('"')
+            if (value.lowercase() in DEAD_COOKIE_VALUES) continue
+            return value
+        }
+        return null
+    }
+
     fun parseJsonField(jsonString: String, field: String): String {
         return try {
             json.parseToJsonElement(jsonString).jsonObject[field]?.jsonPrimitive?.content ?: ""

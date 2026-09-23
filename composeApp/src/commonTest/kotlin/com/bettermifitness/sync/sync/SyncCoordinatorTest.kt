@@ -174,14 +174,37 @@ class SyncCoordinatorTest {
         assertEquals(SyncOutcome.STATUS_SUCCESS, prefs.lastStatus)
     }
 
+    @Test
+    fun activeSession_rollsPassportForwardBeforeSyncing() = runBlocking {
+        val session = FakeSession(ok = true)
+        val runner = FakeSyncRunner()
+        coordinator(prefs = FakePrefs(), token = "t", session = session, runner = runner).run(
+            requestHealthPermissions = false,
+            userInitiated = true,
+        )
+        assertEquals(1, session.staleRefreshes)
+    }
+
+    @Test
+    fun inactiveSession_doesNotAttemptPassportRefresh() = runBlocking {
+        val session = FakeSession(ok = false)
+        val outcome = coordinator(prefs = FakePrefs(), token = "t", session = session).run(
+            requestHealthPermissions = false,
+            userInitiated = true,
+        )
+        assertEquals(SyncOutcome.NotLoggedIn, outcome)
+        assertEquals(0, session.staleRefreshes)
+    }
+
     private fun coordinator(
         prefs: FakePrefs,
         token: String?,
         sessionOk: Boolean = true,
+        session: FakeSession = FakeSession(sessionOk),
         health: FakeHealth = FakeHealth(),
         runner: HealthSyncRunner = FakeSyncRunner(),
     ) = SyncCoordinator(
-        session = FakeSession(sessionOk),
+        session = session,
         credentials = FakeCredentials(token),
         syncPreferences = prefs,
         healthAvailability = health,
@@ -190,7 +213,11 @@ class SyncCoordinatorTest {
     )
 
     private class FakeSession(private val ok: Boolean) : SyncSessionPort {
+        var staleRefreshes = 0
         override suspend fun ensureActive(): Boolean = ok
+        override suspend fun refreshSessionIfStale() {
+            staleRefreshes++
+        }
     }
 
     private class FakeCredentials(token: String?) : CredentialsPort {
