@@ -28,6 +28,7 @@ data class LoginUiState(
     val errorMessage: String? = null,
     val otpMaskedTarget: String = "",
     val loginSucceeded: Boolean = false,
+    val browserLoginUrl: String = "",
 )
 
 class LoginViewModel(
@@ -64,7 +65,8 @@ class LoginViewModel(
         viewModelScope.launch {
             uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                when (val result = miAuth.login(email = email, password = password)) {
+                val deviceId = credentialsStore.ensureDeviceId()
+                when (val result = miAuth.login(email = email, password = password, deviceId = deviceId)) {
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
                     is LoginResult.OtpRequired -> {
                         otpChallenge = result
@@ -83,11 +85,13 @@ class LoginViewModel(
                             // Rate-limit / send failure: skip OTP UI entirely.
                             browserBackGoesToOtp = false
                             otpChallenge = null
+                            val url = browserLoginUrl()
                             uiState.update {
                                 it.copy(
                                     isLoading = false,
                                     step = LoginStep.BrowserFallback,
                                     otpMaskedTarget = "",
+                                    browserLoginUrl = url,
                                     errorMessage = e.message ?: L10n.text(L10n.loginSendCodeFailed),
                                 )
                             }
@@ -113,10 +117,12 @@ class LoginViewModel(
                 val msg = e.message ?: L10n.text(L10n.loginVerificationFailed)
                 if (shouldFallbackToBrowser(msg)) {
                     browserBackGoesToOtp = true
+                    val url = browserLoginUrl()
                     uiState.update {
                         it.copy(
                             isLoading = false,
                             step = LoginStep.BrowserFallback,
+                            browserLoginUrl = url,
                             errorMessage =
                                 L10n.text(L10n.loginBrowserRequired),
                         )
@@ -160,12 +166,13 @@ class LoginViewModel(
                 val credentials = miAuth.completeFromCallbackUrl(cleaned)
                 persistAndSucceed(credentials)
             } catch (e: Exception) {
-                // Optional fallback: trusted deviceId + password (rarely works after OTP).
-                val deviceId = extractDeviceId(cleaned)
+                // Optional fallback: retry password on the stable install id
+                // (the pasted URL's d= belongs to the browser session, not the app).
                 val email = uiState.value.email.trim()
                 val password = uiState.value.password
-                if (deviceId.isNotEmpty() && email.isNotBlank() && password.isNotBlank()) {
+                if (email.isNotBlank() && password.isNotBlank()) {
                     try {
+                        val deviceId = credentialsStore.ensureDeviceId()
                         when (
                             val result = miAuth.login(
                                 email = email,
@@ -199,9 +206,21 @@ class LoginViewModel(
     fun goToBrowserFallback() {
         // User left OTP intentionally (“Having trouble?”) — Back should restore OTP.
         browserBackGoesToOtp = otpChallenge != null
-        uiState.update {
-            it.copy(step = LoginStep.BrowserFallback, errorMessage = null)
+        viewModelScope.launch {
+            val url = browserLoginUrl()
+            uiState.update {
+                it.copy(step = LoginStep.BrowserFallback, errorMessage = null, browserLoginUrl = url)
+            }
         }
+    }
+
+    /**
+     * Browser login URL bound to this install's stable device identity, so the trust
+     * granted in the browser lands on the device id the app refreshes with.
+     */
+    suspend fun browserLoginUrl(): String {
+        val deviceId = credentialsStore.ensureDeviceId()
+        return miAuth.buildLoginUrl(deviceId = deviceId)
     }
 
     /**
@@ -223,6 +242,7 @@ class LoginViewModel(
                 step = LoginStep.Credentials,
                 errorMessage = null,
                 otpMaskedTarget = "",
+                browserLoginUrl = "",
             )
         }
     }
@@ -235,6 +255,7 @@ class LoginViewModel(
                 step = LoginStep.Credentials,
                 errorMessage = null,
                 otpMaskedTarget = "",
+                browserLoginUrl = "",
             )
         }
     }
@@ -244,7 +265,12 @@ class LoginViewModel(
     }
 
     private suspend fun persistAndSucceed(credentials: MiCredentials) {
-        if (credentials.passToken.isBlank()) {
+        // Refresh binds trust to this install's id; keep using it even when the
+        // STS response echoes the browser's id from the pasted redirect URL.
+        // Stable before the blank checks so a same-id success is never rejected.
+        val stableDeviceId = credentialsStore.ensureDeviceId()
+        val effective = credentials.copy(deviceId = stableDeviceId)
+        if (effective.passToken.isBlank()) {
             uiState.update {
                 it.copy(
                     isLoading = false,
@@ -254,7 +280,7 @@ class LoginViewModel(
             }
             return
         }
-        if (credentials.deviceId.isBlank()) {
+        if (effective.deviceId.isBlank()) {
             uiState.update {
                 it.copy(
                     isLoading = false,
@@ -263,11 +289,11 @@ class LoginViewModel(
             }
             return
         }
-        sessionManager.activate(credentials)
-        credentialsStore.saveCredentials(credentials)
+        sessionManager.activate(effective)
+        credentialsStore.saveCredentials(effective)
         // Pick the health cloud shard that actually holds the newest samples.
         try {
-            val discovered = regionDiscovery.discover(credentials)
+            val discovered = regionDiscovery.discover(effective)
             credentialsStore.setDiscoveredRegion(discovered)
             sessionManager.reloadFromStore()
         } catch (_: Exception) {
@@ -280,6 +306,7 @@ class LoginViewModel(
                 errorMessage = null,
                 // Drop OTP/browser step so Back cannot reopen them after success.
                 step = LoginStep.Credentials,
+                browserLoginUrl = "",
             )
         }
     }
@@ -295,6 +322,8 @@ class LoginViewModel(
         fun shouldFallbackToBrowser(message: String): Boolean =
             OTP_BROWSER_HINTS.any { message.contains(it, ignoreCase = true) }
 
+        // Kept for tests: older builds matched the pasted STS redirect d= id.
+        // The app now uses the stable install id from CredentialsStore instead.
         fun extractDeviceId(url: String): String {
             val cleaned = url.trim().lines().firstOrNull { it.isNotBlank() }?.trim() ?: return ""
             // Xiaomi uses d= on STS; some pages also use deviceId=

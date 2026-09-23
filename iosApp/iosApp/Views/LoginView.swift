@@ -21,6 +21,11 @@ struct LoginView: View {
     private static let xiaomiLoginURL =
         "https://account.xiaomi.com/pass/serviceLogin?sid=miothealth&callback=https%3A%2F%2Fsts-hlth.io.mi.com%2Fhealthapp%2Fsts&_locale=en"
 
+    /// Per-install URL from the shared login state (carries stable d=), else legacy base.
+    private var xiaomiLoginLink: String {
+        store.browserLoginUrl.isEmpty ? Self.xiaomiLoginURL : store.browserLoginUrl
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -373,7 +378,7 @@ struct LoginView: View {
                             .disabled(store.isLoading)
 
                             Button {
-                                UIPasteboard.general.string = Self.xiaomiLoginURL
+                                UIPasteboard.general.string = xiaomiLoginLink
                                 loginUrlCopied = true
                             } label: {
                                 Label(
@@ -670,7 +675,7 @@ struct LoginView: View {
     }
 
     private func openXiaomiLogin() {
-        if let url = URL(string: Self.xiaomiLoginURL) {
+        if let url = URL(string: xiaomiLoginLink) {
             UIApplication.shared.open(url)
         }
     }

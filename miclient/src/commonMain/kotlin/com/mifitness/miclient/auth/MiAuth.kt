@@ -151,8 +151,12 @@ class MiAuth(
     fun buildLoginUrl(
         sid: String = PassportAuthUtils.DEFAULT_SID,
         callback: String = PassportAuthUtils.DEFAULT_STS_CALLBACK,
+        deviceId: String = "",
     ): String {
-        return "https://account.xiaomi.com/pass/serviceLogin?sid=$sid&callback=$callback&_locale=en"
+        val base =
+            "https://account.xiaomi.com/pass/serviceLogin?sid=$sid&callback=$callback&_locale=en"
+        if (deviceId.isBlank()) return base
+        return "$base&d=${deviceId.encodeURLParameter()}"
     }
 
     /**
@@ -262,7 +266,12 @@ class MiAuth(
             )
         }
 
-        val credentials = exchangeLocationForCredentials(client, authResponse, deviceId)
+        val credentials = exchangeLocationForCredentials(
+            client = client,
+            cookieStorage = cookieStorage,
+            authResponse = authResponse,
+            deviceId = deviceId,
+        )
         if (closeClientOnSuccess) client.close()
         return LoginResult.Success(credentials)
     }
@@ -529,6 +538,7 @@ class MiAuth(
 
     private suspend fun exchangeLocationForCredentials(
         client: HttpClient,
+        cookieStorage: AcceptAllCookiesStorage,
         authResponse: JsonObject,
         deviceId: String,
     ): MiCredentials {
@@ -539,7 +549,12 @@ class MiAuth(
             )
         val userId = PassportAuthUtils.jsonUserId(authResponse)
         val ssecurity = authResponse["ssecurity"]?.jsonPrimitive?.content ?: ""
-        val passToken = authResponse["passToken"]?.jsonPrimitive?.content ?: ""
+        // Xiaomi can issue the passToken as a Set-Cookie instead of the JSON body.
+        val cookiePassToken = cookieStorage.get(Url("https://account.xiaomi.com/"))
+            .firstOrNull { cookie -> cookie.name == "passToken" }?.value.orEmpty()
+        val passToken = authResponse["passToken"]?.jsonPrimitive?.content
+            ?.takeIf { it.isNotBlank() }
+            ?: cookiePassToken.takeIf { it.isNotBlank() }.orEmpty()
         if (passToken.isBlank()) {
             throw MiAuthException(
                 "Login succeeded but no passToken — session cannot be refreshed later",
@@ -548,6 +563,12 @@ class MiAuth(
         }
         val cUserId = authResponse["cUserId"]?.jsonPrimitive?.content
             ?: authResponse["encryptedUserId"]?.jsonPrimitive?.content
+            ?: cookieStorage.get(Url("https://account.xiaomi.com/"))
+                .firstOrNull { cookie -> cookie.name == "cUserId" }?.value
+                .takeIf { it?.isNotBlank() == true }
+            ?: cookieStorage.get(Url("https://sts-hlth.io.mi.com/"))
+                .firstOrNull { cookie -> cookie.name == "cUserId" }?.value
+                .takeIf { it?.isNotBlank() == true }
             ?: ""
         val nonce = authResponse["nonce"]?.let { el ->
             try {

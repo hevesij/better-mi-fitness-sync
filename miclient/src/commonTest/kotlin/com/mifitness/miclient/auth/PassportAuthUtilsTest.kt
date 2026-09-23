@@ -97,4 +97,15 @@ class PassportAuthUtilsTest {
             PassportAuthUtils.setCookieValue(listOf("PASSTOKEN=tok; Path=/"), "passToken"),
         )
     }
+
+    @Test
+    fun generateDeviceId_isStableShapeForTrustedDevice() {
+        // Trust accumulates on one id, so every minted id must keep the wb_ + 32 hex shape.
+        repeat(8) {
+            val id = PassportAuthUtils.generateDeviceId()
+            assertTrue(id.startsWith("wb_"), "device id must keep wb_ prefix, was $id")
+            assertEquals(35, id.length)
+            assertTrue(id.drop(3).all { it in "0123456789abcdef" }, "device id must be hex: $id")
+        }
+    }
 }

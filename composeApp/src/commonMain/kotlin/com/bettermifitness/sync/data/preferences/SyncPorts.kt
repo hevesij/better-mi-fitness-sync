@@ -16,6 +16,15 @@ interface CredentialsPort {
      * Used to roll the passport session forward before Xiaomi retires the current passToken.
      */
     suspend fun lastSessionRefreshEpochSeconds(): Long? = null
+
+    /**
+     * Stable device identity used across login, OTP, browser URL, and refresh.
+     * Default is empty for fakes; the DataStore implementation generates once.
+     */
+    suspend fun loadDeviceId(): String = ""
+
+    /** Same as [loadDeviceId] but generates and persists when missing. */
+    suspend fun ensureDeviceId(): String = loadDeviceId()
 }
 
 /** ISP: sync settings + last-run outcome persistence. */

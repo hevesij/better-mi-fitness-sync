@@ -11,6 +11,8 @@ final class LoginStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var otpMaskedTarget: String = ""
     @Published private(set) var loginSucceeded: Bool = false
+    /// Per-install browser login URL (carries stable d= device id, empty until loaded).
+    @Published private(set) var browserLoginUrl: String = ""
 
     private let vm: LoginViewModel
     private var subscription: FlowSubscription?
@@ -38,6 +40,7 @@ final class LoginStore: ObservableObject {
         errorMessage = state.errorMessage
         otpMaskedTarget = state.otpMaskedTarget
         loginSucceeded = state.loginSucceeded
+        browserLoginUrl = state.browserLoginUrl
     }
 
     func onEmailChange(_ value: String) {

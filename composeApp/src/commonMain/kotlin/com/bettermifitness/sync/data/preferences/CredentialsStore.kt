@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.mifitness.miclient.auth.MiCredentials
 import com.mifitness.miclient.auth.MiRegion
+import com.mifitness.miclient.auth.PassportAuthUtils
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -44,7 +45,10 @@ class CredentialsStore(
             preferences[MI_USER_ID_KEY] = credentials.userId
             preferences[SSECURITY_KEY] = credentials.ssecurity
             preferences[PASS_TOKEN_KEY] = credentials.passToken
-            preferences[DEVICE_ID_KEY] = credentials.deviceId
+            // Device identity is stable across logins; never blank it from legacy creds.
+            if (credentials.deviceId.isNotBlank()) {
+                preferences[DEVICE_ID_KEY] = credentials.deviceId
+            }
             if (credentials.cUserId.isNotBlank()) {
                 preferences[C_USER_ID_KEY] = credentials.cUserId
             } else {
@@ -90,6 +94,22 @@ class CredentialsStore(
         dataStore.data.first()[SESSION_REFRESHED_AT_KEY]?.toLongOrNull()
 
     /**
+     * Stable device identity Xiaomi uses to decide whether email+password needs OTP.
+     * Generated once and reused for every login, OTP, browser URL, and refresh,
+     * mirroring the official app's cached hashed device id. Never blank after return.
+     */
+    override suspend fun ensureDeviceId(): String {
+        val prefs = dataStore.data.first()
+        prefs[DEVICE_ID_KEY]?.takeIf { it.isNotBlank() }?.let { return it }
+        val generated = PassportAuthUtils.generateDeviceId()
+        dataStore.edit { it[DEVICE_ID_KEY] = generated }
+        return generated
+    }
+
+    /** Current stored device identity, or empty when never generated. */
+    override suspend fun loadDeviceId(): String = dataStore.data.first()[DEVICE_ID_KEY] ?: ""
+
+    /**
      * Persist auto-discovery winner and metadata for Settings.
      */
     suspend fun setDiscoveredRegion(result: MiRegion.DiscoveryResult) {
@@ -105,7 +125,7 @@ class CredentialsStore(
         }
     }
 
-    /** Clears only credential keys (leaves sync preferences intact). */
+    /** Clears session credentials but keeps the stable device identity. */
     suspend fun clearCredentials() {
         dataStore.edit { preferences ->
             preferences.remove(TOKEN_KEY)
@@ -117,7 +137,6 @@ class CredentialsStore(
             preferences.remove(REGION_LATEST_EPOCH_KEY)
             preferences.remove(SSECURITY_KEY)
             preferences.remove(PASS_TOKEN_KEY)
-            preferences.remove(DEVICE_ID_KEY)
             preferences.remove(C_USER_ID_KEY)
             preferences.remove(SESSION_REFRESHED_AT_KEY)
         }
