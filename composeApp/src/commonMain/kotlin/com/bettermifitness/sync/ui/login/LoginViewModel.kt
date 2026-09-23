@@ -174,42 +174,65 @@ class LoginViewModel(
             }
             return
         }
+        // Browser flow per design: the pasted STS URL carries the browser-trusted
+        // device id (d=). Adopt it as this install's id, then retry email+password
+        // on that id so the OTP challenge is bypassed. Completing STS from the
+        // URL is only a fallback — the browser session is never ours to harvest.
+        val email = uiState.value.email.trim()
+        val password = uiState.value.password
+        if (email.isBlank() || password.isBlank()) {
+            uiState.update {
+                it.copy(
+                    errorMessage = "Enter your email and password first, then paste the browser URL.",
+                )
+            }
+            return
+        }
+        val trustedDeviceId = extractDeviceId(cleaned)
+        if (trustedDeviceId.isBlank()) {
+            uiState.update {
+                it.copy(
+                    errorMessage = "That URL has no device id (d=…). Copy the full address bar URL.",
+                )
+            }
+            return
+        }
 
         viewModelScope.launch {
             uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            credentialsStore.restoreDeviceId(trustedDeviceId)
             try {
-                // Correct path: finish STS session from the pasted URL.
-                // Re-running password login with only deviceId still hits OTP and shows
-                // "Still requires verification" even with a valid redirect.
+                when (val result = miAuth.login(email = email, password = password, deviceId = trustedDeviceId)) {
+                    is LoginResult.Success -> persistAndSucceed(result.credentials)
+                    is LoginResult.OtpRequired -> {
+                        // Trusted id did not bypass OTP (e.g. still rate-limited):
+                        // park the challenge and hand the user back to OTP/browser.
+                        otpChallenge = result
+                        browserBackGoesToOtp = false
+                        val url = browserLoginUrl()
+                        uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                step = LoginStep.BrowserFallback,
+                                otpMaskedTarget = result.maskedTarget,
+                                browserLoginUrl = url,
+                                errorMessage = result.notificationUrl.ifBlank {
+                                    L10n.text(L10n.loginBrowserRequired)
+                                },
+                            )
+                        }
+                    }
+                }
+                return@launch
+            } catch (e: Exception) {
+                // Password retry failed (network, rate limit): fall through to the
+                // STS completion below so a valid grant still has a chance.
+                uiState.update { it.copy(errorMessage = e.message) }
+            }
+            try {
                 val credentials = miAuth.completeFromCallbackUrl(cleaned)
                 persistAndSucceed(credentials)
             } catch (e: Exception) {
-                // Optional fallback: retry password on the stable install id
-                // (the pasted URL's d= belongs to the browser session, not the app).
-                val email = uiState.value.email.trim()
-                val password = uiState.value.password
-                if (email.isNotBlank() && password.isNotBlank()) {
-                    try {
-                        val deviceId = credentialsStore.ensureDeviceId()
-                        when (
-                            val result = miAuth.login(
-                                email = email,
-                                password = password,
-                                deviceId = deviceId,
-                            )
-                        ) {
-                            is LoginResult.Success -> {
-                                persistAndSucceed(result.credentials)
-                                return@launch
-                            }
-                            is LoginResult.OtpRequired -> {
-                                // Fall through to user-facing error from STS attempt.
-                            }
-                        }
-                    } catch (_: Exception) {
-                        // Prefer the STS error message below.
-                    }
-                }
                 uiState.update {
                     it.copy(
                         isLoading = false,
@@ -290,11 +313,9 @@ class LoginViewModel(
     }
 
     private suspend fun persistAndSucceed(credentials: MiCredentials) {
-        // Refresh binds trust to this install's id; keep using it even when the
-        // STS response echoes the browser's id from the pasted redirect URL.
-        // Stable before the blank checks so a same-id success is never rejected.
-        val stableDeviceId = credentialsStore.ensureDeviceId()
-        val effective = credentials.copy(deviceId = stableDeviceId)
+        // Trust now lives on the browser-adopted id: persist what login returned
+        // instead of normalizing back to a previous install id.
+        val effective = credentials
         if (effective.passToken.isBlank()) {
             uiState.update {
                 it.copy(
@@ -347,8 +368,8 @@ class LoginViewModel(
         fun shouldFallbackToBrowser(message: String): Boolean =
             OTP_BROWSER_HINTS.any { message.contains(it, ignoreCase = true) }
 
-        // Kept for tests: older builds matched the pasted STS redirect d= id.
-        // The app now uses the stable install id from CredentialsStore instead.
+        // Browser-trusted device id from the pasted STS redirect URL (d=/deviceId).
+        // Adopted as this install's id so the password retry bypasses OTP.
         fun extractDeviceId(url: String): String {
             val cleaned = url.trim().lines().firstOrNull { it.isNotBlank() }?.trim() ?: return ""
             // Xiaomi uses d= on STS; some pages also use deviceId=
