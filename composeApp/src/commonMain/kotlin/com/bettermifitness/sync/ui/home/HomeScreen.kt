@@ -48,6 +48,7 @@ import com.bettermifitness.sync.ui.components.PrimaryButton
 import com.bettermifitness.sync.ui.components.StickyCtaBar
 import com.bettermifitness.sync.ui.icons.AppIcon
 import com.bettermifitness.sync.ui.icons.AppIcons
+import coil3.compose.AsyncImage
 
 /**
  * Home hub (parity with iOS SwiftUI HomeView):
@@ -146,6 +147,7 @@ fun HomeScreen(
                     else -> L10n.string(L10n.homeLoadingProfile)
                 },
                 isError = state.profileError != null,
+                avatarUrl = state.profile?.result?.icon.orEmpty(),
             )
 
             blockingBanner(state, healthName)?.let { banner ->
@@ -167,7 +169,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AccountHero(name: String, subtitle: String, isError: Boolean) {
+private fun AccountHero(name: String, subtitle: String, isError: Boolean, avatarUrl: String = "") {
     val letter = name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -176,19 +178,23 @@ private fun AccountHero(name: String, subtitle: String, isError: Boolean) {
             .fillMaxWidth()
             .padding(vertical = 8.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(BrandColors.Navy),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                letter,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-            )
+        if (avatarUrl.isBlank()) {
+            LetterAvatar(letter)
+        } else {
+            // Coil3 caches the avatar; initial letter stays as placeholder/error.
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                LetterAvatar(letter)
+                AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp).clip(CircleShape),
+                )
+            }
         }
         Text(
             name,
@@ -208,6 +214,25 @@ private fun AccountHero(name: String, subtitle: String, isError: Boolean) {
             },
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+// Initial-letter circle; reused as cached-avatar placeholder/error backdrop.
+@Composable
+private fun LetterAvatar(letter: String) {
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .background(BrandColors.Navy),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            letter,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
         )
     }
 }

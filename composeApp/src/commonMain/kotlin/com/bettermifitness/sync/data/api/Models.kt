@@ -16,6 +16,7 @@ data class MeResponse(
 @Serializable
 data class UserProfile(
     val name: String? = null,
+    val icon: String? = null,
     val sex: String? = null,
     val age: Int? = null,
     val height: Int? = null,

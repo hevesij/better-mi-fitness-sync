@@ -86,7 +86,27 @@ struct HomeView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .first
             .map { String($0).uppercased() } ?? "?"
-        return Text(letter)
+        // Cached remote avatar; initial letter stays as placeholder/fallback.
+        if let url = URL(string: store.state.profileAvatarUrl), !store.state.profileAvatarUrl.isEmpty {
+            return AnyView(
+                ZStack {
+                    letterAvatar(letter)
+                    AsyncImage(url: url) { image in
+                        image.resizable()
+                    } placeholder: {
+                        Color.clear
+                    }
+                    .frame(width: 72, height: 72)
+                    .clipShape(Circle())
+                    .accessibilityHidden(true)
+                }
+            )
+        }
+        return AnyView(letterAvatar(letter))
+    }
+
+    private func letterAvatar(_ letter: String) -> some View {
+        Text(letter)
             .font(.title2.bold())
             .foregroundStyle(.white)
             .frame(width: 72, height: 72)

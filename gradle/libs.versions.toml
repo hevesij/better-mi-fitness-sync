@@ -18,6 +18,7 @@ koin = "4.2.2"
 
 # Android / multiplatform UI libs
 health-connect = "1.1.0"
+coil3 = "3.6.3"
 datastore = "1.2.1"
 androidx-activityCompose = "1.13.0"
 # JetBrains multiplatform lifecycle + Android lifecycle-process
@@ -60,6 +61,10 @@ koin-compose-viewmodel-navigation = { module = "io.insert-koin:koin-compose-view
 
 # Health Connect
 health-connect = { module = "androidx.health.connect:connect-client", version.ref = "health-connect" }
+
+# Coil 3 image loading (multiplatform Compose)
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil3" }
+coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil3" }
 
 # DataStore
 datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastore" }
