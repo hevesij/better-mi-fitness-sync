@@ -103,6 +103,17 @@ object L10n {
     val loginBrowserFinishFailed get() = MR.strings.login_browser_finish_failed
     val loginMissingPassToken get() = MR.strings.login_missing_pass_token
     val loginMissingDeviceId get() = MR.strings.login_missing_device_id
+    val loginCaptchaTitle get() = MR.strings.login_captcha_title
+    val loginCaptchaDetail get() = MR.strings.login_captcha_detail
+    val loginCaptchaCode get() = MR.strings.login_captcha_code
+    val loginCaptchaContinue get() = MR.strings.login_captcha_continue
+    val loginCaptchaRefresh get() = MR.strings.login_captcha_refresh
+    val loginCaptchaLoading get() = MR.strings.login_captcha_loading
+    val loginCaptchaWrong get() = MR.strings.login_captcha_wrong
+    val loginCaptchaEmpty get() = MR.strings.login_captcha_empty
+    val loginCaptchaLoadFailed get() = MR.strings.login_captcha_load_failed
+    val loginCaptchaBrowserRequired get() = MR.strings.login_captcha_browser_required
+    val loginCaptchaTrouble get() = MR.strings.login_captcha_trouble
 
     // Home
     val homeAccount get() = MR.strings.home_account

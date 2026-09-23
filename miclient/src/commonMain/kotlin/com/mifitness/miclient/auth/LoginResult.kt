@@ -6,6 +6,7 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Cookie
 import io.ktor.http.Parameters
 import io.ktor.http.Url
@@ -16,6 +17,45 @@ import kotlinx.serialization.json.jsonPrimitive
 /** Result of a login attempt. */
 sealed class LoginResult {
     data class Success(val credentials: MiCredentials) : LoginResult()
+
+    /** Captcha image bytes plus the `ick` session token from its response headers. */
+    data class CaptchaImage(val bytes: ByteArray, val ick: String) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is CaptchaImage) return false
+            return bytes.contentEquals(other.bytes) && ick == other.ick
+        }
+
+        override fun hashCode(): Int = 31 * bytes.contentHashCode() + ick.hashCode()
+    }
+
+    /**
+     * Mi requires a typed picture captcha. Call [fetchImage], show the bytes,
+     * then [submitCode]. Holds the live HTTP session so the `ick` binding is kept.
+     */
+    data class CaptchaRequired(
+        private val host: MiAuthHost,
+        internal val client: HttpClient,
+        internal val cookieStorage: AcceptAllCookiesStorage,
+        val email: String,
+        internal val password: String,
+        internal val sid: String,
+        internal val callback: String,
+        internal val meta: MetaLoginData,
+        val captchaUrl: String,
+        val captchaType: String,
+        val deviceId: String,
+    ) : LoginResult() {
+
+        val isPictureCaptcha: Boolean get() = PassportAuthUtils.isPictureCaptchaType(captchaType)
+
+        /** Downloads the image on this challenge's client; `ick` stays bound to it. */
+        suspend fun fetchImage(): CaptchaImage = host.fetchCaptchaImage(client, captchaUrl)
+
+        /** Retries password login with the typed code on the same session. */
+        suspend fun submitCode(code: String, ick: String): LoginResult =
+            host.loginWithCaptcha(this, code.trim(), ick)
+    }
 
     /**
      * Mi requires OTP. Call [sendOtp], then [verifyOtp].
@@ -225,6 +265,14 @@ sealed class LoginResult {
  * Host used by OTP challenge to finish login without depending on the full [MiAuth] type.
  */
 interface MiAuthHost {
+    suspend fun fetchCaptchaImage(client: HttpClient, captchaUrl: String): LoginResult.CaptchaImage
+
+    suspend fun loginWithCaptcha(
+        challenge: LoginResult.CaptchaRequired,
+        code: String,
+        ick: String,
+    ): LoginResult
+
     suspend fun finishLoginAfterOtp(
         client: HttpClient,
         cookieStorage: AcceptAllCookiesStorage,

@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 enum class LoginStep {
     Credentials,
     Otp,
+    Captcha,
     BrowserFallback,
 }
 
@@ -29,6 +30,9 @@ data class LoginUiState(
     val otpMaskedTarget: String = "",
     val loginSucceeded: Boolean = false,
     val browserLoginUrl: String = "",
+    val captchaImage: ByteArray? = null,
+    val captchaIck: String = "",
+    val captchaLoading: Boolean = false,
 )
 
 class LoginViewModel(
@@ -42,6 +46,7 @@ class LoginViewModel(
         field = MutableStateFlow(LoginUiState())
 
     private var otpChallenge: LoginResult.OtpRequired? = null
+    private var captchaChallenge: LoginResult.CaptchaRequired? = null
 
     /**
      * When true, Back on browser returns to OTP (user chose browser from OTP).
@@ -68,14 +73,20 @@ class LoginViewModel(
                 val deviceId = credentialsStore.ensureDeviceId()
                 when (val result = miAuth.login(email = email, password = password, deviceId = deviceId)) {
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
+                    is LoginResult.CaptchaRequired -> {
+                        otpChallenge = null
+                        enterCaptchaChallenge(result, errorMessage = null)
+                    }
                     is LoginResult.OtpRequired -> {
                         otpChallenge = result
+                        captchaChallenge = null
                         // 87001 (2FA) and 81003 (captcha) never produce an email OTP:
                         // route straight to browser instead of stranding the user.
                         // A real OTP challenge always carries notificationUrl.
                         if (result.notificationUrl.isBlank()) {
                             browserBackGoesToOtp = false
                             otpChallenge = null
+                            captchaChallenge = null
                             val url = browserLoginUrl()
                             uiState.update {
                                 it.copy(
@@ -103,6 +114,7 @@ class LoginViewModel(
                             // Rate-limit / send failure: skip OTP UI entirely.
                             browserBackGoesToOtp = false
                             otpChallenge = null
+                            captchaChallenge = null
                             val url = browserLoginUrl()
                             uiState.update {
                                 it.copy(
@@ -166,6 +178,173 @@ class LoginViewModel(
         }
     }
 
+    /** Parks a picture challenge and loads its first image for the Captcha step. */
+    private fun enterCaptchaChallenge(
+        challenge: LoginResult.CaptchaRequired,
+        errorMessage: String?,
+    ) {
+        if (!challenge.isPictureCaptcha) {
+            viewModelScope.launch {
+                browserBackGoesToOtp = otpChallenge != null
+                captchaChallenge = null
+                val url = browserLoginUrl()
+                uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        captchaLoading = false,
+                        step = LoginStep.BrowserFallback,
+                        browserLoginUrl = url,
+                        errorMessage = L10n.text(L10n.loginCaptchaBrowserRequired),
+                    )
+                }
+            }
+            return
+        }
+        captchaChallenge = challenge
+        viewModelScope.launch {
+            uiState.update {
+                it.copy(
+                    isLoading = false,
+                    step = LoginStep.Captcha,
+                    captchaImage = null,
+                    captchaIck = "",
+                    captchaLoading = true,
+                    errorMessage = errorMessage,
+                )
+            }
+            try {
+                val image = challenge.fetchImage()
+                uiState.update {
+                    it.copy(captchaImage = image.bytes, captchaIck = image.ick, captchaLoading = false)
+                }
+            } catch (e: Exception) {
+                uiState.update {
+                    it.copy(
+                        captchaLoading = false,
+                        errorMessage = e.message ?: L10n.text(L10n.loginCaptchaLoadFailed),
+                    )
+                }
+            }
+        }
+    }
+
+    fun refreshCaptcha() {
+        val challenge = captchaChallenge ?: return
+        if (uiState.value.captchaLoading) return
+        viewModelScope.launch {
+            uiState.update { it.copy(captchaLoading = true, errorMessage = null) }
+            try {
+                val image = challenge.fetchImage()
+                uiState.update {
+                    it.copy(captchaImage = image.bytes, captchaIck = image.ick, captchaLoading = false)
+                }
+            } catch (e: Exception) {
+                uiState.update {
+                    it.copy(
+                        captchaLoading = false,
+                        errorMessage = e.message ?: L10n.text(L10n.loginCaptchaLoadFailed),
+                    )
+                }
+            }
+        }
+    }
+
+    fun submitCaptcha(code: String) {
+        val challenge = captchaChallenge ?: return
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) {
+            uiState.update { it.copy(errorMessage = L10n.text(L10n.loginCaptchaEmpty)) }
+            return
+        }
+        val ick = uiState.value.captchaIck
+        if (ick.isBlank()) {
+            uiState.update { it.copy(errorMessage = L10n.text(L10n.loginCaptchaLoadFailed)) }
+            return
+        }
+        viewModelScope.launch {
+            uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                when (val result = challenge.submitCode(trimmed, ick)) {
+                    is LoginResult.Success -> persistAndSucceed(result.credentials)
+                    is LoginResult.CaptchaRequired -> {
+                        // Wrong code: park the fresh challenge and load a new picture.
+                        enterCaptchaChallenge(
+                            result,
+                            errorMessage = L10n.text(L10n.loginCaptchaWrong),
+                        )
+                    }
+                    is LoginResult.OtpRequired -> {
+                        captchaChallenge = null
+                        otpChallenge = result
+                        browserBackGoesToOtp = false
+                        if (result.notificationUrl.isBlank()) {
+                            val url = browserLoginUrl()
+                            uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    step = LoginStep.BrowserFallback,
+                                    otpMaskedTarget = "",
+                                    browserLoginUrl = url,
+                                    errorMessage = L10n.text(L10n.loginBrowserRequired),
+                                )
+                            }
+                        } else {
+                            try {
+                                result.sendOtp()
+                                uiState.update {
+                                    it.copy(
+                                        isLoading = false,
+                                        step = LoginStep.Otp,
+                                        otpMaskedTarget = result.maskedTarget,
+                                        errorMessage = null,
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                val url = browserLoginUrl()
+                                uiState.update {
+                                    it.copy(
+                                        isLoading = false,
+                                        step = LoginStep.BrowserFallback,
+                                        otpMaskedTarget = "",
+                                        browserLoginUrl = url,
+                                        errorMessage = e.message ?: L10n.text(L10n.loginSendCodeFailed),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                uiState.update {
+                    it.copy(isLoading = false, errorMessage = e.message ?: L10n.text(L10n.loginFailed))
+                }
+            }
+        }
+    }
+
+    fun goToBrowserFromCaptcha() {
+        browserBackGoesToOtp = otpChallenge != null
+        viewModelScope.launch {
+            val url = browserLoginUrl()
+            uiState.update {
+                it.copy(step = LoginStep.BrowserFallback, errorMessage = null, browserLoginUrl = url)
+            }
+        }
+    }
+
+    fun goBackFromCaptcha() {
+        captchaChallenge = null
+        uiState.update {
+            it.copy(
+                step = LoginStep.Credentials,
+                errorMessage = null,
+                captchaImage = null,
+                captchaIck = "",
+                captchaLoading = false,
+            )
+        }
+    }
+
     fun completeBrowserLogin(callbackUrl: String) {
         val cleaned = callbackUrl.trim()
         if (cleaned.isBlank()) {
@@ -208,6 +387,7 @@ class LoginViewModel(
                         // Trusted id did not bypass OTP (e.g. still rate-limited):
                         // park the challenge and hand the user back to OTP/browser.
                         otpChallenge = result
+                        captchaChallenge = null
                         browserBackGoesToOtp = false
                         val url = browserLoginUrl()
                         uiState.update {
@@ -221,6 +401,10 @@ class LoginViewModel(
                                 },
                             )
                         }
+                    }
+                    is LoginResult.CaptchaRequired -> {
+                        otpChallenge = null
+                        enterCaptchaChallenge(result, errorMessage = null)
                     }
                 }
                 return@launch
@@ -254,7 +438,6 @@ class LoginViewModel(
             }
         }
     }
-
     /** Resolves the per-install browser URL for the UI layer (blank until loaded). */
     fun openBrowserLogin(onUrl: (String) -> Unit) {
         viewModelScope.launch {
@@ -297,6 +480,7 @@ class LoginViewModel(
 
     fun goBackToCredentials() {
         otpChallenge = null
+        captchaChallenge = null
         browserBackGoesToOtp = false
         uiState.update {
             it.copy(
@@ -304,6 +488,9 @@ class LoginViewModel(
                 errorMessage = null,
                 otpMaskedTarget = "",
                 browserLoginUrl = "",
+                captchaImage = null,
+                captchaIck = "",
+                captchaLoading = false,
             )
         }
     }
@@ -367,6 +554,10 @@ class LoginViewModel(
 
         fun shouldFallbackToBrowser(message: String): Boolean =
             OTP_BROWSER_HINTS.any { message.contains(it, ignoreCase = true) }
+
+        /** Shared routing so Compose, iOS, and tests agree on picture vs browser. */
+        fun isPictureCaptchaForStep(type: String): Boolean =
+            com.mifitness.miclient.auth.PassportAuthUtils.isPictureCaptchaType(type)
 
         // Browser-trusted device id from the pasted STS redirect URL (d=/deviceId).
         // Adopted as this install's id so the password retry bypasses OTP.

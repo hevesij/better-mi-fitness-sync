@@ -8,6 +8,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.Cookie
 import io.ktor.http.Parameters
 import io.ktor.http.Url
@@ -315,6 +316,8 @@ class MiAuth(
         sid: String,
         callback: String,
         closeClientOnSuccess: Boolean,
+        captCode: String = "",
+        captIck: String = "",
     ): LoginResult {
         // Server-issued triplet, with 1.0.2 fallback: fetchMetaLoginData throws
         // when Xiaomi answers without _sign/qs/callback (seen after OTP verify on
@@ -325,17 +328,25 @@ class MiAuth(
         } catch (_: Exception) {
             fetchMetaLoginDataFallback(sid, callback)
         }
-        val authResponse = postServiceLoginAuth2(client, email, password, sid, meta)
+        val authResponse = postServiceLoginAuth2(client, email, password, sid, meta, captCode, captIck)
 
         val code = authResponse["code"]?.jsonPrimitive?.int ?: -1
         if (code != 0) {
             val desc = authResponse["desc"]?.jsonPrimitive?.content
                 ?: authResponse["description"]?.jsonPrimitive?.content
                 ?: "Login failed"
-            throw MiAuthException(
-                PassportAuthUtils.friendlyLoginError(code, desc),
-                kind = MiAuthException.Kind.InvalidCredential,
-                businessCode = code,
+            return captchaChallengeOrThrow(
+                code = code,
+                desc = desc,
+                authResponse = authResponse,
+                hostClient = client,
+                cookieStorage = cookieStorage,
+                email = email,
+                password = password,
+                deviceId = deviceId,
+                sid = sid,
+                callback = callback,
+                meta = meta,
             )
         }
 
@@ -365,6 +376,101 @@ class MiAuth(
         )
         if (closeClientOnSuccess) client.close()
         return LoginResult.Success(credentials)
+    }
+
+    /**
+     * APK captcha shape: `87001` carries `captchaUrl` + `type`, and `70016`
+     * can carry the meta triplet plus an optional `captchaUrl`. Picture codes
+     * become a user-solved challenge; anything else stays a typed error.
+     */
+    private fun captchaChallengeOrThrow(
+        code: Int,
+        desc: String,
+        authResponse: JsonObject,
+        hostClient: HttpClient,
+        cookieStorage: AcceptAllCookiesStorage,
+        email: String,
+        password: String,
+        deviceId: String,
+        sid: String,
+        callback: String,
+        meta: MetaLoginData,
+    ): LoginResult {
+        val captchaPath = authResponse["captchaUrl"]?.jsonPrimitive?.content.orEmpty()
+            .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        val captchaUrl = captchaPath?.let { PassportAuthUtils.absCaptchaUrl(it) }.orEmpty()
+        if (captchaUrl.isNotBlank() && (code == 87001 || code == 70016)) {
+            return LoginResult.CaptchaRequired(
+                host = this,
+                client = hostClient,
+                cookieStorage = cookieStorage,
+                email = email,
+                password = password,
+                sid = sid,
+                callback = callback,
+                meta = meta,
+                captchaUrl = captchaUrl,
+                captchaType = authResponse["type"]?.jsonPrimitive?.content.orEmpty(),
+                deviceId = deviceId,
+            )
+        }
+        throw MiAuthException(
+            PassportAuthUtils.friendlyLoginError(code, desc),
+            kind = MiAuthException.Kind.InvalidCredential,
+            businessCode = code,
+        )
+    }
+
+    override suspend fun fetchCaptchaImage(
+        client: HttpClient,
+        captchaUrl: String,
+    ): LoginResult.CaptchaImage {
+        val url = PassportAuthUtils.absCaptchaUrl(captchaUrl)
+        if (url.isBlank()) throw MiAuthException("Captcha image URL is missing")
+        val response = client.get(url) {
+            header("User-Agent", userAgent)
+        }
+        val bytes = response.readRawBytes()
+        if (bytes.isEmpty()) throw MiAuthException("Captcha image download was empty — refresh and try again")
+        val headers = (response.headers.getAll("Set-Cookie") ?: emptyList()) +
+            (response.headers.getAll("set-cookie") ?: emptyList())
+        val ick = PassportAuthUtils.setCookieValue(headers, "ick")
+            ?: response.headers["ick"].orEmpty()
+        if (ick.isBlank()) throw MiAuthException("Captcha session expired — refresh the picture and try again")
+        return LoginResult.CaptchaImage(bytes = bytes, ick = ick)
+    }
+
+    override suspend fun loginWithCaptcha(
+        challenge: LoginResult.CaptchaRequired,
+        code: String,
+        ick: String,
+    ): LoginResult {
+        if (code.isBlank()) throw MiAuthException("Type the code shown in the picture first")
+        if (ick.isBlank()) throw MiAuthException("Captcha session expired — refresh the picture and try again")
+        PassportHttpSession.seedIckCookie(challenge.cookieStorage, ick)
+        return try {
+            passwordLoginStep(
+                client = challenge.client,
+                cookieStorage = challenge.cookieStorage,
+                email = challenge.email,
+                password = challenge.password,
+                deviceId = challenge.deviceId,
+                sid = challenge.sid,
+                callback = challenge.callback,
+                closeClientOnSuccess = false,
+                captCode = code,
+                captIck = ick,
+            )
+        } catch (e: MiAuthException) {
+            if (e.businessCode == 87001) {
+                throw MiAuthException(
+                    PassportAuthUtils.friendlyCaptchaError(e.businessCode, e.message ?: ""),
+                    kind = MiAuthException.Kind.InvalidCredential,
+                    businessCode = e.businessCode,
+                )
+            }
+            throw e
+        }
     }
 
     override suspend fun finishLoginAfterOtp(
@@ -428,6 +534,13 @@ class MiAuth(
             }
             is LoginResult.OtpRequired -> {
                 // Same client reused; do not open a nested OTP challenge.
+            }
+            is LoginResult.CaptchaRequired -> {
+                client.close()
+                throw MiAuthException(
+                    "Captcha is still required after verification — solve the picture and try again.",
+                    kind = MiAuthException.Kind.InvalidCredential,
+                )
             }
         }
 
@@ -676,6 +789,8 @@ class MiAuth(
         password: String,
         sid: String,
         meta: MetaLoginData,
+        captCode: String = "",
+        captIck: String = "",
     ): JsonObject {
         val hash = MiCloudSigner.hashPassword(password)
         val response = client.submitForm(
@@ -687,6 +802,7 @@ class MiAuth(
                 append("qs", meta.qs)
                 append("user", email)
                 append("_json", "true")
+                if (captCode.isNotBlank()) append("captCode", captCode)
                 // Fallback triplet carries no _sign — omit instead of sending blank.
                 if (meta.sign.isNotEmpty()) append("_sign", meta.sign)
                 append("_locale", "en")

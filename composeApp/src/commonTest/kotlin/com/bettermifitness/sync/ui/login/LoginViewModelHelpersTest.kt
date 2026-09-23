@@ -85,4 +85,18 @@ class LoginViewModelHelpersTest {
             step2Keys,
         )
     }
+
+    @Test
+    fun captchaStep_existsForPictureChallenge() {
+        // LoginStep.Captcha must exist so 87001 picture codes have a UI target.
+        assertTrue(LoginStep.entries.map { it.name }.contains("Captcha"))
+    }
+
+    @Test
+    fun pictureCaptchaTypes_routeToCaptchaStep() {
+        assertTrue(LoginViewModel.isPictureCaptchaForStep(""))
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("captcha"))
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("captchaView"))
+        assertFalse(LoginViewModel.isPictureCaptchaForStep("manMachine"))
+    }
 }

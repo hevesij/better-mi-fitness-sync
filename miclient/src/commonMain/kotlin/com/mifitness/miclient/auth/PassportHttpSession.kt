@@ -42,4 +42,13 @@ object PassportHttpSession {
             }
         }
     }
+
+    /** Seeds the captcha `ick` token so the retry posts on the same session. */
+    suspend fun seedIckCookie(storage: AcceptAllCookiesStorage, ick: String) {
+        if (ick.isEmpty()) return
+        storage.addCookie(
+            Url("https://account.xiaomi.com/"),
+            Cookie(name = "ick", value = ick, domain = ".xiaomi.com", path = "/"),
+        )
+    }
 }

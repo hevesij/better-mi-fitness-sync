@@ -61,6 +61,13 @@ enum L10n {
     static var loginVerificationCode: String { s(strings.login_verification_code) }
     static var loginEmpty: String { s(strings.login_empty) }
     static func loginDigits(_ count: Int, _ total: Int) -> String { f(strings.login_digits, [count, total]) }
+    static var loginCaptchaTitle: String { s(strings.login_captcha_title) }
+    static var loginCaptchaDetail: String { s(strings.login_captcha_detail) }
+    static var loginCaptchaCode: String { s(strings.login_captcha_code) }
+    static var loginCaptchaContinue: String { s(strings.login_captcha_continue) }
+    static var loginCaptchaRefresh: String { s(strings.login_captcha_refresh) }
+    static var loginCaptchaLoading: String { s(strings.login_captcha_loading) }
+    static var loginCaptchaTrouble: String { s(strings.login_captcha_trouble) }
 
     // Home
     static var homeAccount: String { s(strings.home_account) }
