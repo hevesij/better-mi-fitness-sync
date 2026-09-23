@@ -104,7 +104,7 @@ fun SyncScreen(viewModel: SyncViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Last $daysLabel",
+                daysLabel,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
