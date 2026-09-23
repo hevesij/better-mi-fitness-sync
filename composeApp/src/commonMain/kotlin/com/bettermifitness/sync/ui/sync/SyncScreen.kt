@@ -224,7 +224,7 @@ private fun MetricRow(metric: SyncMetric, syncState: SyncState) {
         )
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
             modifier = Modifier.width(88.dp),
         ) {
             when (syncState) {
