@@ -99,62 +99,135 @@ class MiAuth(
                 client,
                 cleaned,
             )
-            if (serviceToken.isEmpty()) {
-                throw MiAuthException(
-                    "Could not get a session from that redirect URL. " +
-                        "Open the login page again, finish sign-in, then paste the new full URL " +
-                        "(it should start with https://sts-hlth.io.mi.com/).",
-                    kind = MiAuthException.Kind.StsFailed,
+            if (serviceToken.isNotEmpty()) {
+                return finishBrowserCredentials(
+                    client = client,
+                    cookieStorage = cookieStorage,
+                    serviceToken = serviceToken,
+                    regionFromRedirects = regionFromRedirects,
+                    regionFromUrl = regionFromUrl,
+                    deviceId = deviceId,
+                    sid = sid,
                 )
             }
-
-            val accountCookies = cookieStorage.get(Url("https://account.xiaomi.com/"))
-            val stsCookies = cookieStorage.get(Url("https://sts-hlth.io.mi.com/"))
-            fun cookie(name: String): String =
-                stsCookies.firstOrNull { it.name == name }?.value
-                    ?: accountCookies.firstOrNull { it.name == name }?.value
-                    ?: ""
-
-            val userId = cookie("userId")
-            val passToken = cookie("passToken")
-            val cUserId = cookie("cUserId")
-            if (passToken.isBlank()) {
-                throw MiAuthException(
-                    "Browser login did not yield a passToken, so the session cannot be refreshed later. " +
-                        "Try password login or paste the URL immediately after Xiaomi shows “ok”.",
-                    kind = MiAuthException.Kind.MissingPassToken,
+            // The pasted page may be the "login ok" landing page rather than the
+            // STS endpoint itself (e.g. pwd=0 bitmap URL or an intermediate page):
+            // retry from the canonical STS URL so cookies still complete the grant.
+            val stsRetry = buildStsUrl(cleaned, deviceId)
+            if (stsRetry != null) {
+                val (retryToken, retryRegion) = followRedirectsCollectingServiceToken(
+                    client,
+                    stsRetry,
                 )
+                if (retryToken.isNotEmpty()) {
+                    return finishBrowserCredentials(
+                        client = client,
+                        cookieStorage = cookieStorage,
+                        serviceToken = retryToken,
+                        regionFromRedirects = retryRegion,
+                        regionFromUrl = regionFromUrl,
+                        deviceId = deviceId,
+                        sid = sid,
+                    )
+                }
             }
-            val harvested = if (userId.isNotEmpty()) {
-                harvestSsecurity(client, userId, passToken, deviceId, sid)
-            } else {
-                null
-            }
-            val ssecurity = harvested?.ssecurity.orEmpty()
-            // That call can already rotate the passToken; store the newest one.
-            val effectivePassToken = harvested?.rotatedPassToken?.takeIf { it.isNotBlank() } ?: passToken
-            if (ssecurity.isEmpty() || userId.isEmpty()) {
-                throw MiAuthException(
-                    "Got a service token but not full session details. " +
-                        "Try browser login again and paste the URL as soon as the page says “ok”.",
-                    kind = MiAuthException.Kind.StsFailed,
-                )
-            }
-
-            return MiCredentials(
-                userId = userId,
-                ssecurity = ssecurity,
-                serviceToken = serviceToken,
-                passToken = effectivePassToken,
-                deviceId = deviceId,
-                region = PassportAuthUtils.resolveRegion(
-                    regionFromUrl.ifBlank { regionFromRedirects },
-                ),
-                cUserId = cUserId,
+            throw MiAuthException(
+                "Could not get a session from that redirect URL. " +
+                    "Open the login page again, finish sign-in, then paste the new full URL " +
+                    "(it should start with https://sts-hlth.io.mi.com/).",
+                kind = MiAuthException.Kind.StsFailed,
             )
         } finally {
             client.close()
         }
+    }
+
+    /**
+     * Harvests userId/passToken/ssecurity for a browser STS grant. Matches the
+     * 1.0.3 cookie-jar behavior the user confirmed working: reads the live jar,
+     * then harvests ssecurity (which also picks up passToken rotation).
+     */
+    private suspend fun finishBrowserCredentials(
+        client: HttpClient,
+        cookieStorage: AcceptAllCookiesStorage,
+        serviceToken: String,
+        regionFromRedirects: String,
+        regionFromUrl: String,
+        deviceId: String,
+        sid: String,
+    ): MiCredentials {
+        val accountCookies = cookieStorage.get(Url("https://account.xiaomi.com/"))
+        val stsCookies = cookieStorage.get(Url("https://sts-hlth.io.mi.com/"))
+        fun cookie(name: String): String =
+            stsCookies.firstOrNull { it.name == name }?.value
+                ?: accountCookies.firstOrNull { it.name == name }?.value
+                ?: ""
+
+        val userId = cookie("userId")
+        val passToken = cookie("passToken")
+        val cUserId = cookie("cUserId")
+        if (passToken.isBlank()) {
+            throw MiAuthException(
+                "Browser login did not yield a passToken, so the session cannot be refreshed later. " +
+                    "Try password login or paste the URL immediately after Xiaomi shows “ok”.",
+                kind = MiAuthException.Kind.MissingPassToken,
+            )
+        }
+        val harvested = if (userId.isNotEmpty()) {
+            harvestSsecurity(client, userId, passToken, deviceId, sid)
+        } else {
+            null
+        }
+        val ssecurity = harvested?.ssecurity.orEmpty()
+        // That call can already rotate the passToken; store the newest one.
+        val effectivePassToken = harvested?.rotatedPassToken?.takeIf { it.isNotBlank() } ?: passToken
+        if (ssecurity.isEmpty() || userId.isEmpty()) {
+            throw MiAuthException(
+                "Got a service token but not full session details. " +
+                    "Try browser login again and paste the URL as soon as the page says “ok”.",
+                kind = MiAuthException.Kind.StsFailed,
+            )
+        }
+
+        return MiCredentials(
+            userId = userId,
+            ssecurity = ssecurity,
+            serviceToken = serviceToken,
+            passToken = effectivePassToken,
+            deviceId = deviceId,
+            region = PassportAuthUtils.resolveRegion(
+                regionFromUrl.ifBlank { regionFromRedirects },
+            ),
+            cUserId = cUserId,
+        )
+    }
+
+    /**
+     * Canonical STS retry URL for a pasted page that is not the STS grant itself.
+     * Keeps the browser's auth bitmap (auth/_ssign/nonce) and rebinds d= so the
+     * grant completes on the same device the browser just trusted.
+     */
+    internal fun buildStsUrl(cleaned: String, deviceId: String): String? {
+        val parsed = try {
+            Url(cleaned)
+        } catch (_: Exception) {
+            return null
+        }
+        if (!parsed.host.equals("sts-hlth.io.mi.com", ignoreCase = true)) return null
+        if (parsed.encodedPath.trim('/') == "healthapp/sts") return null
+        val params = parseQueryString(parsed.encodedQuery)
+        val query = linkedMapOf<String, String>()
+        query["d"] = deviceId.ifBlank { params["d"].orEmpty() }
+        for (key in params.names()) {
+            if (key == "d" || key == "deviceId") continue
+            params[key]?.let { query[key] = it }
+        }
+        if (query["d"].isNullOrBlank()) query.remove("d")
+        if (query.isEmpty()) return null
+        val encoded = query.entries.joinToString("&") { (key, value) ->
+            "${key.encodeURLParameter()}=${value.encodeURLParameter()}"
+        }
+        return "https://sts-hlth.io.mi.com/healthapp/sts?$encoded"
     }
 
     fun buildLoginUrl(
@@ -760,6 +833,20 @@ class MiAuth(
             val headerToken = response.headers["serviceToken"]
                 ?: response.headers["${sid}_serviceToken"]
             if (!headerToken.isNullOrBlank()) serviceToken = headerToken
+
+            // 1.0.3 parity: the STS bitmap page answers HTTP 200 "ok" with the grant
+            // in Set-Cookie (no Location redirect to follow). Without this, pasted
+            // pwd=0 URLs always fail with "Could not get a session".
+            if (serviceToken.isNotEmpty()) {
+                if (currentUrl.contains("p_ur=")) {
+                    region = try {
+                        parseQueryString(Url(currentUrl).encodedQuery)["p_ur"] ?: region
+                    } catch (_: Exception) {
+                        region
+                    }
+                }
+                return serviceToken to region
+            }
 
             if (currentUrl.contains("p_ur=")) {
                 region = try {

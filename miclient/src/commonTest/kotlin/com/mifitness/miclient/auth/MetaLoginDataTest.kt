@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MetaLoginDataTest {
 
@@ -32,6 +33,38 @@ class MetaLoginDataTest {
             "step1Token=ST1.ABC123; Domain=.xiaomi.com; Path=/; HttpOnly",
         )
         assertEquals("ST1.ABC123", PassportAuthUtils.setCookieValue(headers, "step1Token"))
+    }
+
+    @Test
+    fun buildStsUrl_returnsNullForCanonicalOrForeignUrls() {
+        // Canonical grant URLs go straight through followRedirects; only
+        // non-/healthapp/sts pages qualify for the canonical-STS retry.
+        assertNull(
+            MiAuth().buildStsUrl(
+                "https://sts-hlth.io.mi.com/healthapp/sts?d=wb_abc&ticket=0",
+                "wb_abc",
+            ),
+        )
+        assertNull(MiAuth().buildStsUrl("https://example.com/?x=1", "wb_abc"))
+    }
+
+    @Test
+    fun buildStsUrl_rebindsNonGrantPageToCanonicalSts() {
+        // A pasted intermediate page (not the STS grant itself) keeps its auth
+        // bitmap and rebinds d= to this install.
+        val pasted = "https://sts-hlth.io.mi.com/login/ok" +
+            "?d=wb_4e22db7b-ccd6-450d-93b4-9c60c431bd62&ticket=0&pwd=0" +
+            "&p_ts=1790146132949&fid=0&p_lm=5&p_ur=ID" +
+            "&auth=nnDPjOS7IfRy3rCTlOFRa12X7BtcbCE6GG2dK9%2BW3DkBANOO3" +
+            "%2BvRHiCztChF5SbU3sPOUfVUKrFwFphgkWkgAbiD7ls%2FZLwNn5SPsRiyKp0w2tH" +
+            "UEHHgMZ141SPgKv923KOXPRrB6yxDOuvph599P7xX0Wgx172ZSvTCPd8b%2BOY%3D" +
+            "&m=2147483648&_group=DEFAULT&tsl=0&p_ca=0&p_idc=Singapore" +
+            "&nonce=WRqYuhPIfrsBx0H4&_ssign=M1RPsnOcKay4rB9EBg17J3wQUzA%3D"
+        val retry = MiAuth().buildStsUrl(pasted, "wb_stabledeviceid000000000000000000")
+        assertTrue(retry?.startsWith("https://sts-hlth.io.mi.com/healthapp/sts?") == true)
+        assertTrue(retry?.contains("d=wb_stabledeviceid000000000000000000") == true)
+        assertTrue(retry?.contains("auth=") == true)
+        assertTrue(retry?.contains("p_ur=ID") == true)
     }
 
     @Test
