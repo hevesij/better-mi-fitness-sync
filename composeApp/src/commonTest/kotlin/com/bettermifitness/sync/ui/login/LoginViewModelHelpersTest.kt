@@ -53,6 +53,18 @@ class LoginViewModelHelpersTest {
     }
 
     @Test
+    fun buildLoginUrl_encodesCallbackOnce() {
+        // Double-encoding the callback breaks the STS handshake (login page shows
+        // "missing callback" instead of completing). The callback stays single-encoded.
+        val url = MiAuth().buildLoginUrl(deviceId = "wb_abc123")
+        assertTrue(
+            url.contains("callback=https%3A%2F%2Fsts-hlth.io.mi.com%2Fhealthapp%2Fsts"),
+            "callback must stay single-encoded: $url",
+        )
+        assertTrue(url.contains("&d=wb_abc123"), "device id binds to the same URL: $url")
+    }
+
+    @Test
     fun browserLoginUrl_withoutDeviceId_keepsLegacyShape() {
         val url = MiAuth().buildLoginUrl()
         assertTrue(

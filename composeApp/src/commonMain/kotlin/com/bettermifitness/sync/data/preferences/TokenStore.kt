@@ -45,10 +45,11 @@ class TokenStore(
      * recognized as the same trusted install instead of a brand-new device.
      */
     suspend fun clear() {
-        // Logout wipes tokens but restores a stable device id right away, so the
-        // next sign-in presents the same trusted install instead of a new device.
+        // Logout wipes tokens but keeps the trusted device id, so the next
+        // sign-in presents the same install instead of a new device (no repeat OTP).
+        val deviceId = credentials.loadDeviceId()
         dataStore.edit { it.clear() }
-        credentials.ensureDeviceId()
+        credentials.restoreDeviceId(deviceId.ifBlank { credentials.ensureDeviceId() })
     }
 
     companion object {

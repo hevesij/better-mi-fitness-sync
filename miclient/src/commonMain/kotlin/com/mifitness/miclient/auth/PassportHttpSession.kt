@@ -9,6 +9,10 @@ import io.ktor.http.Url
 
 /**
  * Builds a cookie-aware Ktor client for Xiaomi passport and seeds deviceId.
+ *
+ * The official app presents the passport device id as both `deviceId` and
+ * `PassportDeviceId` cookies (Reqable: `Cookie: PassportDeviceId=3E88…` on
+ * health calls, `d=3E88…` on STS). Seed both so every passport leg carries it.
  */
 object PassportHttpSession {
     fun buildClient(cookieStorage: AcceptAllCookiesStorage): HttpClient {
@@ -23,17 +27,19 @@ object PassportHttpSession {
     suspend fun seedDeviceIdCookie(storage: AcceptAllCookiesStorage, deviceId: String) {
         if (deviceId.isEmpty()) return
         for (host in listOf("https://account.xiaomi.com/", "https://sts-hlth.io.mi.com/")) {
-            storage.addCookie(
-                Url(host),
-                Cookie(
-                    name = "deviceId",
-                    value = deviceId,
-                    domain = host.removePrefix("https://").removeSuffix("/").let {
-                        if (it.contains("xiaomi")) ".xiaomi.com" else it
-                    },
-                    path = "/",
-                ),
-            )
+            for (name in listOf("deviceId", "PassportDeviceId")) {
+                storage.addCookie(
+                    Url(host),
+                    Cookie(
+                        name = name,
+                        value = deviceId,
+                        domain = host.removePrefix("https://").removeSuffix("/").let {
+                            if (it.contains("xiaomi")) ".xiaomi.com" else it
+                        },
+                        path = "/",
+                    ),
+                )
+            }
         }
     }
 }

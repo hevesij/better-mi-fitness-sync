@@ -110,6 +110,16 @@ class CredentialsStore(
     override suspend fun loadDeviceId(): String = dataStore.data.first()[DEVICE_ID_KEY] ?: ""
 
     /**
+     * Restores a previously trusted device identity without minting a new one.
+     * Used by logout, which wipes tokens but must keep presenting the same
+     * install to Xiaomi on the next sign-in.
+     */
+    suspend fun restoreDeviceId(deviceId: String) {
+        if (deviceId.isBlank()) return
+        dataStore.edit { it[DEVICE_ID_KEY] = deviceId }
+    }
+
+    /**
      * Persist auto-discovery winner and metadata for Settings.
      */
     suspend fun setDiscoveredRegion(result: MiRegion.DiscoveryResult) {

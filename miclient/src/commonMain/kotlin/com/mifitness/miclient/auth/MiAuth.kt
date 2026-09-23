@@ -234,8 +234,8 @@ class MiAuth(
         callback: String,
         closeClientOnSuccess: Boolean,
     ): LoginResult {
-        val sign = fetchSign(client, sid)
-        val authResponse = postServiceLoginAuth2(client, email, password, sid, callback, sign)
+        val sign = fetchSign(client, sid, deviceId)
+        val authResponse = postServiceLoginAuth2(client, email, password, deviceId, sid, callback, sign)
 
         val code = authResponse["code"]?.jsonPrimitive?.int ?: -1
         if (code != 0) {
@@ -365,7 +365,9 @@ class MiAuth(
         )
 
         val loginUrl =
-            "https://account.xiaomi.com/pass/serviceLogin?sid=$sid&_json=true&callback=${callback.encodeURLParameter()}"
+            "https://account.xiaomi.com/pass/serviceLogin?sid=${sid.encodeURLParameter()}" +
+                "&_json=true&callback=${callback.encodeURLParameter()}" +
+                "&d=${deviceId.encodeURLParameter()}"
         val response = client.get(loginUrl) {
             header("User-Agent", userAgent)
         }
@@ -501,8 +503,10 @@ class MiAuth(
         )
     }
 
-    private suspend fun fetchSign(client: HttpClient, sid: String): String {
-        val response = client.get("https://account.xiaomi.com/pass/serviceLogin?sid=$sid&_json=true") {
+    private suspend fun fetchSign(client: HttpClient, sid: String, deviceId: String): String {
+        val url = "https://account.xiaomi.com/pass/serviceLogin" +
+            "?sid=${sid.encodeURLParameter()}&_json=true&d=${deviceId.encodeURLParameter()}"
+        val response = client.get(url) {
             header("User-Agent", userAgent)
         }
         val body = PassportAuthUtils.stripJsonPrefix(response.bodyAsText())
@@ -514,6 +518,7 @@ class MiAuth(
         client: HttpClient,
         email: String,
         password: String,
+        deviceId: String,
         sid: String,
         callback: String,
         sign: String,
@@ -527,6 +532,10 @@ class MiAuth(
                 append("callback", callback)
                 append("qs", "?sid=$sid&_json=true")
                 append("user", email)
+                // Bind the credential check to the same install the cookies carry,
+                // mirroring the official app's deviceId/d body params.
+                append("deviceId", deviceId)
+                append("d", deviceId)
                 append("_json", "true")
                 if (sign.isNotEmpty()) append("_sign", sign)
             },
@@ -703,7 +712,9 @@ class MiAuth(
         deviceId: String,
         sid: String,
     ): SsecurityHarvest {
-        val response = client.get("https://account.xiaomi.com/pass/serviceLogin?sid=$sid&_json=true") {
+        val url = "https://account.xiaomi.com/pass/serviceLogin" +
+            "?sid=${sid.encodeURLParameter()}&_json=true&d=${deviceId.encodeURLParameter()}"
+        val response = client.get(url) {
             header("User-Agent", userAgent)
             header("Cookie", "userId=$userId; passToken=$passToken; deviceId=$deviceId")
         }

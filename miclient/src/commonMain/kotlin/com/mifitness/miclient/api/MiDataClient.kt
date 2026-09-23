@@ -173,6 +173,7 @@ class MiDataClient(
 
     private fun buildCookieHeader(): String {
         // APK plantHealthCookie uses cUserId for .hlth.io.mi.com; fall back to userId for legacy sessions.
+        // Official traffic also carries PassportDeviceId on health calls (Reqable record 2213).
         val identityCookie = if (credentials.cUserId.isNotBlank()) {
             "cUserId=${credentials.cUserId}"
         } else {
@@ -181,6 +182,7 @@ class MiDataClient(
         return listOf(
             "serviceToken=${credentials.serviceToken}",
             identityCookie,
+            "PassportDeviceId=${credentials.deviceId}",
             "locale=en",
             "auth_key=$AUTH_KEY",
         ).joinToString("; ")
