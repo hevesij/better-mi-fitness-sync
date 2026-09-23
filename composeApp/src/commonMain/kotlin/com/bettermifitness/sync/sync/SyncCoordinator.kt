@@ -167,16 +167,14 @@ class SyncCoordinator(
     }
 
     private suspend fun recordOutcome(outcome: SyncOutcome, recordAsBackground: Boolean) {
+        // Skipped means no work ran (auto-sync off, nothing enabled) — leave the last
+        // real result alone instead of stamping it over with "nothing to do".
+        if (outcome is SyncOutcome.Skipped) return
         val status = outcome.toStatusCode()
         val message = outcome.userMessage()
         if (recordAsBackground) {
             syncPreferences.updateLastBackgroundSyncOutcome(status, message)
             syncPreferences.updateLastBackgroundSync(Clock.System.now().toString())
-            when (outcome) {
-                SyncOutcome.Success, is SyncOutcome.PartialSuccess ->
-                    syncPreferences.updateLastSyncOutcome(status, message)
-                else -> Unit
-            }
         } else {
             syncPreferences.updateLastSyncOutcome(status, message)
         }
@@ -189,6 +187,7 @@ class SyncCoordinator(
         userInitiated: Boolean,
         requireAutoSync: Boolean,
     ): SyncOutcome {
+        if (result.isEmpty) return SyncOutcome.Skipped
         if (result.succeeded > 0) {
             syncPreferences.updateLastSync(now)
             if (recordAsBackground) {
@@ -197,7 +196,6 @@ class SyncCoordinator(
         }
 
         return when {
-            result.isEmpty -> SyncOutcome.Skipped
             result.isFullSuccess -> SyncOutcome.Success
             result.isPartialSuccess -> SyncOutcome.PartialSuccess(
                 succeeded = result.succeeded,

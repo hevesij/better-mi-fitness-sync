@@ -35,6 +35,8 @@ class SyncOutcomeLabelsTest {
     fun severityFlags() {
         assertTrue(SyncOutcomeLabels.isError(SyncOutcome.STATUS_FAILED))
         assertTrue(SyncOutcomeLabels.isWarning(SyncOutcome.STATUS_PARTIAL_SUCCESS))
+        // Skipped is neutral: a no-op run must never render as a partial sync.
+        assertFalse(SyncOutcomeLabels.isWarning(SyncOutcome.STATUS_SKIPPED))
         assertFalse(SyncOutcomeLabels.isError(SyncOutcome.STATUS_SUCCESS))
     }
 }

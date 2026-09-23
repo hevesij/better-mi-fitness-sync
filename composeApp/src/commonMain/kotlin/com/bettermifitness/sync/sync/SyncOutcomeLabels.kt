@@ -34,7 +34,7 @@ object SyncOutcomeLabels {
     }
 
     fun isWarning(status: String?): Boolean =
-        status == SyncOutcome.STATUS_PARTIAL_SUCCESS || status == SyncOutcome.STATUS_SKIPPED
+        status == SyncOutcome.STATUS_PARTIAL_SUCCESS
 
     fun isError(status: String?): Boolean =
         status == SyncOutcome.STATUS_FAILED ||

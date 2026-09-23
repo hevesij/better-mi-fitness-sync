@@ -27,14 +27,19 @@ import kotlinx.coroutines.runBlocking
 class SyncCoordinatorTest {
 
     @Test
-    fun requireAutoSync_whenDisabled_skips() = runBlocking {
+    fun requireAutoSync_whenDisabled_skipsWithoutTouchingPrefs() = runBlocking {
         val prefs = FakePrefs(autoSync = false)
+        prefs.lastStatus = SyncOutcome.STATUS_SUCCESS
         val outcome = coordinator(prefs = prefs, token = "t").run(
             requireAutoSync = true,
             requestHealthPermissions = false,
             userInitiated = false,
         )
         assertEquals(SyncOutcome.Skipped, outcome)
+        // The iOS foreground auto-sync path hits this when the toggle is off:
+        // a no-op run must leave the manual Success result alone.
+        assertEquals(SyncOutcome.STATUS_SUCCESS, prefs.lastStatus)
+        assertEquals(null, prefs.lastBgStatus)
     }
 
     @Test
@@ -153,6 +158,44 @@ class SyncCoordinatorTest {
     }
 
     @Test
+    fun skippedRun_leavesLastSyncPrefsUntouched() = runBlocking {
+        val prefs = FakePrefs()
+        prefs.lastStatus = SyncOutcome.STATUS_SUCCESS
+        val outcome = coordinator(prefs = prefs, token = "t", runner = FakeSyncRunner()).run(
+            requestHealthPermissions = false,
+            userInitiated = false,
+            requireAutoSync = false,
+        )
+        // Empty repository result maps to Skipped, which must not clobber the prior Success.
+        assertEquals(SyncOutcome.Skipped, outcome)
+        assertEquals(SyncOutcome.STATUS_SUCCESS, prefs.lastStatus)
+    }
+
+    @Test
+    fun backgroundRun_recordsBackgroundKeysOnly() = runBlocking {
+        val prefs = FakePrefs()
+        val runner = FakeSyncRunner(
+            result = SyncRunResult(
+                attempted = 2,
+                succeeded = 2,
+                failed = 0,
+                totalRecords = 10,
+                hadRetryableFailure = false,
+                hadAuthFailure = false,
+                errorMessages = emptyList(),
+            ),
+        )
+        val outcome = coordinator(prefs = prefs, token = "t", runner = runner).run(
+            requestHealthPermissions = false,
+            recordAsBackground = true,
+            userInitiated = false,
+        )
+        assertEquals(SyncOutcome.Success, outcome)
+        assertEquals(SyncOutcome.STATUS_SUCCESS, prefs.lastBgStatus)
+        assertEquals(null, prefs.lastStatus)
+    }
+
+    @Test
     fun concurrentRun_secondReturnsAlreadyRunning() = runBlocking {
         val hold = kotlinx.coroutines.CompletableDeferred<Unit>()
         val release = kotlinx.coroutines.CompletableDeferred<Unit>()
@@ -236,6 +279,8 @@ class SyncCoordinatorTest {
         override val syncRangeDays = MutableStateFlow(rangeDays)
         var lastStatus: String? = null
         var lastMessage: String? = null
+        var lastBgStatus: String? = null
+        var lastBgMessage: String? = null
 
         override suspend fun updateLastSync(timestamp: String) = Unit
         override suspend fun updateLastBackgroundSync(timestamp: String) = Unit
@@ -244,8 +289,8 @@ class SyncCoordinatorTest {
             lastMessage = message
         }
         override suspend fun updateLastBackgroundSyncOutcome(status: String, message: String?) {
-            lastStatus = status
-            lastMessage = message
+            lastBgStatus = status
+            lastBgMessage = message
         }
     }
 
