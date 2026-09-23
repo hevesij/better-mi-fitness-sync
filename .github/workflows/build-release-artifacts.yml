@@ -36,6 +36,7 @@ permissions:
 
 env:
   JAVA_VERSION: "17"
+  XCODE_VERSION: "26.2"
   GRADLE_OPTS: >-
     -Dorg.gradle.daemon=false
     -Dorg.gradle.parallel=true
@@ -44,6 +45,66 @@ env:
   KONAN_DATA_DIR: ${{ github.workspace }}/.konan-cache
 
 jobs:
+  # Warms the shared Gradle + Konan caches from trusted main pushes so
+  # read-only PR jobs restore instead of rebuilding the K/N toolchain.
+  ios-cache-warmup:
+    name: iOS cache warmup
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      GRADLE_OPTS: >-
+        -Dorg.gradle.daemon=false
+        -Dorg.gradle.parallel=true
+        -Dorg.gradle.caching=true
+        -Dorg.gradle.jvmargs=-Xmx6g
+        -Dkotlin.daemon.jvm.options=-Xmx6g
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle (max cache)
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          gradle-home-cache-includes: |
+            caches
+            notifications
+            jdks
+            wrapper
+          gradle-home-cache-excludes: |
+            caches/*/kotlin-dsl/
+            caches/*/scripts/
+
+      - name: Cache Kotlin/Native (Konan)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.KONAN_DATA_DIR }}
+            ~/.konan
+          key: ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-konan-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}-v4
+          restore-keys: |
+            ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-konan-v4-
+            ${{ runner.os }}-konan-v3-
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      # Compile-only: downloads the Konan toolchain and warms K/N task
+      # outputs without running the full Release link + xcodebuild.
+      - name: Warm iOS compile + test compile
+        run: ./gradlew :composeApp:compileKotlinIosSimulatorArm64 :composeApp:compileTestKotlinIosSimulatorArm64 --stacktrace --build-cache --configuration-cache
+
   quick-check:
     name: Quick check
     # Branch pushes only — not version tags (those need full APK/IPA).
@@ -274,14 +335,15 @@ jobs:
           path: |
             ${{ env.KONAN_DATA_DIR }}
             ~/.konan
-          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}-v3
+          key: ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-konan-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}-v4
           restore-keys: |
+            ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-konan-v4-
             ${{ runner.os }}-konan-v3-
 
-      - name: Select latest Xcode
+      - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Show toolchain
         run: |
@@ -328,10 +390,11 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST"
           /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST"
 
-      # composeApp commonTest on K/N iOS simulator (compiles miclient as a dep).
+      # composeApp commonTest on the K/N iOS simulator target only.
       # miclient JVM tests already run on the Ubuntu job — skip redundant :miclient:allTests.
+      # :allTests also builds device-only test artifacts this job never runs.
       - name: Unit tests (composeApp)
-        run: ./gradlew :composeApp:allTests --stacktrace --build-cache --configuration-cache
+        run: ./gradlew :composeApp:iosSimulatorArm64Test --stacktrace --build-cache --configuration-cache
 
       - name: Link Kotlin iOS device framework (Release)
         run: >
@@ -339,13 +402,17 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx6g -Dkotlin.daemon.jvm.options=-Xmx6g"
           --stacktrace --build-cache --configuration-cache
 
-      # Xcode DerivedData for Swift / link steps (secondary to Konan)
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@v5
+      # Xcode DerivedData for Swift / link steps (secondary to Konan).
+      # Version inject rewrites Info.plist, so iosApp/** would bust the key
+      # every build; hash stable inputs plus the pinned Xcode version instead.
+      # PRs restore only — main/tags save, so PRs reuse the warm main cache.
+      - name: Restore Xcode DerivedData
+        uses: actions/cache/restore@v5
         with:
           path: iosApp/build/DerivedData
-          key: ${{ runner.os }}-dd-rel-${{ hashFiles('iosApp/**', 'composeApp/build.gradle.kts', 'gradle/libs.versions.toml') }}-v4
+          key: ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-dd-rel-${{ hashFiles('iosApp/project.yml', 'iosApp/iosApp/**/*.swift', 'iosApp/iosApp/Assets.xcassets/**', 'composeApp/build.gradle.kts', 'gradle/libs.versions.toml') }}-v5
           restore-keys: |
+            ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-dd-rel-v5-
             ${{ runner.os }}-dd-rel-v4-
             ${{ runner.os }}-dd-
 
@@ -418,6 +485,14 @@ jobs:
           path: dist/*.ipa
           if-no-files-found: error
           retention-days: 30
+
+      # PRs restore the warm main cache above but never overwrite it.
+      - name: Save Xcode DerivedData (main/tags only)
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v5
+        with:
+          path: iosApp/build/DerivedData
+          key: ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-dd-rel-${{ hashFiles('iosApp/project.yml', 'iosApp/iosApp/**/*.swift', 'iosApp/iosApp/Assets.xcassets/**', 'composeApp/build.gradle.kts', 'gradle/libs.versions.toml') }}-v5
 
   # ─── GitHub Release (tags only) ───────────────────────────────────
   publish-release:
