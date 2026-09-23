@@ -410,32 +410,27 @@ private fun MetricRow(metric: SyncMetric, enabled: Boolean, onToggle: (Boolean) 
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
+        AppIcon(
+            AppIcons.forMetric(metric.key),
+            contentDescription = null,
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            L10n.metric(metric.key),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
-        ) {
-            AppIcon(
-                AppIcons.forMetric(metric.key),
-                contentDescription = null,
-                tint = if (enabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.size(12.dp))
-            Text(
-                L10n.metric(metric.key),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        )
         Switch(checked = enabled, onCheckedChange = onToggle)
     }
 }
