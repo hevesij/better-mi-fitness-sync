@@ -1,10 +1,10 @@
 [versions]
-# Toolchain — Kotlin 2.4.20 + CMP 1.12.1 (stable) + AGP 9.1.1 + Gradle 9.7.1
+# Toolchain — Kotlin 2.4.20 + CMP 1.12.1 (stable) + AGP 9.3.3 + Gradle 9.7.1
 kotlin = "2.4.20"
 compose-multiplatform = "1.12.1"
 # Material3 multiplatform artifact line for CMP 1.12.x (see CMP 1.12.1 deps table)
 compose-material3 = "1.12.0-alpha03"
-agp = "9.1.1"
+agp = "9.3.3"
 jetbrains-navigation = "2.9.2"
 
 # Networking / kotlinx

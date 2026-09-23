@@ -67,7 +67,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 dependencies {
-    implementation(projects.composeApp)
+    implementation(project(":composeApp"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.health.connect)
 }
