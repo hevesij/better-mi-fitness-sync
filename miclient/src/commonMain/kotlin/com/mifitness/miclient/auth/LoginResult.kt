@@ -29,7 +29,7 @@ sealed class LoginResult {
         internal val password: String,
         internal val sid: String,
         internal val callback: String,
-        internal val notificationUrl: String,
+        val notificationUrl: String,
         val maskedTarget: String,
         val deviceId: String,
     ) : LoginResult() {
@@ -38,6 +38,12 @@ sealed class LoginResult {
         private var verifyPageUrl: String = ""
         private val userAgent = PassportAuthUtils.DEFAULT_USER_AGENT
         private var sessionWarmed = false
+
+        // Passport trust-binding material captured on verifyEmail success.
+        internal var lastStep1Token: String = ""
+            private set
+        internal var lastMeta: MetaLoginData? = null
+            private set
 
         suspend fun sendOtp() {
             if (notificationUrl.isEmpty()) {
@@ -133,6 +139,20 @@ sealed class LoginResult {
 
             val inlineUserId = obj["userId"]?.jsonPrimitive?.content
             val inlinePass = obj["passToken"]?.jsonPrimitive?.content
+            // Passport device trust binding: verifyEmail hands back step1Token
+            // (response cookie/header) plus an optional fresh _sign/qs/callback triplet.
+            val setCookies = (response.headers.getAll("Set-Cookie") ?: emptyList()) +
+                (response.headers.getAll("set-cookie") ?: emptyList())
+            lastStep1Token = PassportAuthUtils.setCookieValue(setCookies, "step1Token")
+                ?: response.headers["step1Token"].orEmpty()
+            val freshSign = obj["_sign"]?.jsonPrimitive?.content.orEmpty()
+            val freshQs = obj["qs"]?.jsonPrimitive?.content.orEmpty()
+            val freshCallback = obj["callback"]?.jsonPrimitive?.content.orEmpty()
+            lastMeta = if (freshSign.isNotEmpty() && freshQs.isNotEmpty() && freshCallback.isNotEmpty()) {
+                MetaLoginData(sign = freshSign, qs = freshQs, callback = freshCallback)
+            } else {
+                null
+            }
             if (!inlineUserId.isNullOrEmpty() && !inlinePass.isNullOrEmpty()) {
                 cookieStorage.addCookie(
                     Url("https://account.xiaomi.com/"),
@@ -152,6 +172,10 @@ sealed class LoginResult {
                 deviceId = deviceId,
                 sid = sid,
                 callback = callback,
+                step1Token = lastStep1Token,
+                meta = lastMeta,
+                step2code = code.trim(),
+                userId = inlineUserId.orEmpty(),
             )
         }
 
@@ -209,6 +233,10 @@ interface MiAuthHost {
         deviceId: String,
         sid: String,
         callback: String,
+        step1Token: String = "",
+        meta: MetaLoginData? = null,
+        step2code: String = "",
+        userId: String = "",
     ): MiCredentials
 
     suspend fun followRedirectsCollectingServiceToken(

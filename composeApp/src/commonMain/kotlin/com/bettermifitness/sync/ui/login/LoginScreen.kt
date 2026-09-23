@@ -114,7 +114,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         LoginStep.BrowserFallback -> BrowserFallbackStep(
             isLoading = state.isLoading,
             errorMessage = state.errorMessage,
-            loginUrl = state.browserLoginUrl.ifBlank { LOGIN_URL },
+            loginUrl = state.browserLoginUrl,
+            onOpenLogin = viewModel::openBrowserLogin,
             onComplete = viewModel::completeBrowserLogin,
             onBack = {
                 // OTP if left from OTP; credentials if OTP was skipped (rate limit).
@@ -428,15 +429,13 @@ private fun OtpStep(
 // Step 2b: Browser Fallback (parity with iOS LoginView)
 // ============================================================
 
-private const val LOGIN_URL =
-    "https://account.xiaomi.com/pass/serviceLogin?sid=miothealth&callback=https%3A%2F%2Fsts-hlth.io.mi.com%2Fhealthapp%2Fsts&_locale=en"
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BrowserFallbackStep(
     isLoading: Boolean,
     errorMessage: String?,
     loginUrl: String,
+    onOpenLogin: ((String) -> Unit) -> Unit,
     onComplete: (String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -449,6 +448,35 @@ private fun BrowserFallbackStep(
     val focusManager = LocalFocusManager.current
     val trimmed = callbackUrl.trim()
     val hasValidUrl = isValidStsRedirectUrl(trimmed)
+    // Resolved per-install URL (carries stable d=); blank until loaded.
+    var resolvedUrl by remember { mutableStateOf(loginUrl) }
+    if (loginUrl.isNotBlank()) resolvedUrl = loginUrl
+    LaunchedEffect(Unit) {
+        if (resolvedUrl.isBlank()) {
+            onOpenLogin { resolvedUrl = it }
+        }
+    }
+
+    fun openLogin() {
+        val url = resolvedUrl.ifBlank { loginUrl }
+        if (url.isBlank()) {
+            onOpenLogin { resolvedUrl = it }
+            return
+        }
+        runCatching { uriHandler.openUri(url) }
+    }
+
+    fun copyLogin() {
+        val url = resolvedUrl.ifBlank { loginUrl }
+        if (url.isBlank()) {
+            onOpenLogin { resolvedUrl = it }
+            return
+        }
+        scope.launch {
+            clipboard.setPlainText(url)
+            urlCopied = true
+        }
+    }
 
     fun pasteFromClipboard() {
         scope.launch {
@@ -522,9 +550,7 @@ private fun BrowserFallbackStep(
                 )
                 Spacer(Modifier.height(12.dp))
                 Button(
-                    onClick = {
-                        runCatching { uriHandler.openUri(loginUrl) }
-                    },
+                    onClick = { openLogin() },
                     enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = BrandShapes.Button,
@@ -533,12 +559,7 @@ private fun BrowserFallbackStep(
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            clipboard.setPlainText(loginUrl)
-                            urlCopied = true
-                        }
-                    },
+                    onClick = { copyLogin() },
                     enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = BrandShapes.Button,
