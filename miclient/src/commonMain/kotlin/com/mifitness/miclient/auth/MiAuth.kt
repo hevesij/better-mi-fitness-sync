@@ -154,7 +154,8 @@ class MiAuth(
         deviceId: String = "",
     ): String {
         val base =
-            "https://account.xiaomi.com/pass/serviceLogin?sid=$sid&callback=$callback&_locale=en"
+            "https://account.xiaomi.com/pass/serviceLogin?sid=${sid.encodeURLParameter()}" +
+                "&callback=${callback.encodeURLParameter()}&_locale=en"
         if (deviceId.isBlank()) return base
         return "$base&d=${deviceId.encodeURLParameter()}"
     }
