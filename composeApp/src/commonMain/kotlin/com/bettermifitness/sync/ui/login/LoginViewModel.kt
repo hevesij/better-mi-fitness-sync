@@ -268,6 +268,8 @@ class LoginViewModel(
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
                     is LoginResult.CaptchaRequired -> {
                         // Wrong code: park the fresh challenge and load a new picture.
+                        // Do NOT auto-route here — the user may have escaped to the
+                        // browser meanwhile; enterCaptchaChallenge owns that choice.
                         enterCaptchaChallenge(
                             result,
                             errorMessage = L10n.text(L10n.loginCaptchaWrong),
@@ -323,6 +325,8 @@ class LoginViewModel(
     }
 
     fun goToBrowserFromCaptcha() {
+        // Park the picture challenge but keep it: Back from browser returns to
+        // the captcha step, and its image/ick stay valid on the same session.
         browserBackGoesToOtp = otpChallenge != null
         viewModelScope.launch {
             val url = browserLoginUrl()
@@ -390,8 +394,9 @@ class LoginViewModel(
                     is LoginResult.OtpRequired -> {
                         // Trusted id did not bypass OTP (e.g. still rate-limited):
                         // park the challenge and hand the user back to OTP/browser.
+                        // A parked picture challenge stays: Back from browser
+                        // returns to captcha, not credentials.
                         otpChallenge = result
-                        captchaChallenge = null
                         browserBackGoesToOtp = false
                         val url = browserLoginUrl()
                         uiState.update {
@@ -407,21 +412,11 @@ class LoginViewModel(
                         }
                     }
                     is LoginResult.CaptchaRequired -> {
-                        // STS grant failed and the retry still hits captcha: stay on
-                        // the browser screen with the error instead of looping back
-                        // into the captcha step the user just escaped.
+                        // STS grant failed and the retry still hits captcha: park the
+                        // fresh picture challenge and show it, so the user solves the
+                        // current image instead of looping on a stale browser error.
                         otpChallenge = null
-                        captchaChallenge = null
-                        browserBackGoesToOtp = false
-                        val url = browserLoginUrl()
-                        uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                step = LoginStep.BrowserFallback,
-                                browserLoginUrl = url,
-                                errorMessage = L10n.text(L10n.loginCaptchaWrong),
-                            )
-                        }
+                        enterCaptchaChallenge(result, errorMessage = null)
                     }
                 }
                 return@launch
@@ -466,12 +461,19 @@ class LoginViewModel(
     /**
      * Back from browser login:
      * - OTP if the user opened browser from the OTP step
+     * - Captcha if a picture challenge is still parked (image/ick stay valid)
      * - Credentials if OTP was skipped (e.g. email send rate-limited)
      */
     fun goBackFromBrowser() {
         if (browserBackGoesToOtp && otpChallenge != null) {
             uiState.update {
                 it.copy(step = LoginStep.Otp, errorMessage = null)
+            }
+            return
+        }
+        if (captchaChallenge != null) {
+            uiState.update {
+                it.copy(step = LoginStep.Captcha, errorMessage = null)
             }
             return
         }
