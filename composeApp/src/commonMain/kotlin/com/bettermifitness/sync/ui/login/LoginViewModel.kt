@@ -80,8 +80,8 @@ class LoginViewModel(
                     is LoginResult.OtpRequired -> {
                         otpChallenge = result
                         captchaChallenge = null
-                        // 87001 (2FA) and 81003 (captcha) never produce an email OTP:
-                        // route straight to browser instead of stranding the user.
+                        // No email OTP exists when notificationUrl is blank (captcha
+                        // or 2FA gate): with no OTP to send, browser is the only path.
                         // A real OTP challenge always carries notificationUrl.
                         if (result.notificationUrl.isBlank()) {
                             browserBackGoesToOtp = false
@@ -111,7 +111,8 @@ class LoginViewModel(
                                 )
                             }
                         } catch (e: Exception) {
-                            // Rate-limit / send failure: skip OTP UI entirely.
+                            // OTP email send failed (rate limit): browser bypasses
+                            // OTP with the trusted id, so it is the correct fallback.
                             browserBackGoesToOtp = false
                             otpChallenge = null
                             captchaChallenge = null
@@ -357,9 +358,11 @@ class LoginViewModel(
             }
             return
         }
-        // Browser flow: the pasted STS URL is itself the grant — complete it on
-        // this install's device id instead of re-running password login, which
-        // re-triggers captcha/OTP and loops (login -> captcha -> browser -> ...).
+        // Browser login only bypasses OTP with a trusted device id — it never
+        // solves captcha. Complete the pasted STS grant directly. The password
+        // retry below only runs when STS fails AND a captcha challenge is not
+        // already parked; otherwise the user loops browser -> captcha -> browser.
+        // A fresh captcha retry always runs on the trusted id with the typed code.
         val email = uiState.value.email.trim()
         val password = uiState.value.password
         val trustedDeviceId = extractDeviceId(cleaned)
@@ -374,8 +377,20 @@ class LoginViewModel(
                 persistAndSucceed(credentials)
                 return@launch
             } catch (e: Exception) {
-                // STS completion failed (expired grant, network): fall through to
-                // the password retry below only when credentials are available.
+                // STS completion failed (no session in grant, expired URL, network).
+                // Retry password login only when credentials exist; a parked
+                // picture challenge takes precedence over a fresh browser error.
+                if (captchaChallenge != null) {
+                    uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            step = LoginStep.Captcha,
+                            errorMessage = e.message
+                                ?: "Could not finish browser login from that URL. Paste the full sts-hlth URL.",
+                        )
+                    }
+                    return@launch
+                }
                 if (email.isBlank() || password.isBlank() || trustedDeviceId.isBlank()) {
                     uiState.update {
                         it.copy(
@@ -392,10 +407,9 @@ class LoginViewModel(
                 when (val result = miAuth.login(email = email, password = password, deviceId = trustedDeviceId)) {
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
                     is LoginResult.OtpRequired -> {
-                        // Trusted id did not bypass OTP (e.g. still rate-limited):
-                        // park the challenge and hand the user back to OTP/browser.
-                        // A parked picture challenge stays: Back from browser
-                        // returns to captcha, not credentials.
+                        // OTP send rate-limited on the trusted id: park the
+                        // challenge and stay on browser — only OTP rate limit
+                        // justifies the browser path.
                         otpChallenge = result
                         browserBackGoesToOtp = false
                         val url = browserLoginUrl()
@@ -412,9 +426,8 @@ class LoginViewModel(
                         }
                     }
                     is LoginResult.CaptchaRequired -> {
-                        // STS grant failed and the retry still hits captcha: park the
-                        // fresh picture challenge and show it, so the user solves the
-                        // current image instead of looping on a stale browser error.
+                        // Captcha on the trusted id: solve it there with the typed
+                        // code — never bounce back to browser, which cannot help.
                         otpChallenge = null
                         enterCaptchaChallenge(result, errorMessage = null)
                     }

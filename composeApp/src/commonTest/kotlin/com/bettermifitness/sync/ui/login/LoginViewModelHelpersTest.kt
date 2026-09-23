@@ -99,4 +99,16 @@ class LoginViewModelHelpersTest {
         assertTrue(LoginViewModel.isPictureCaptchaForStep("captchaView"))
         assertFalse(LoginViewModel.isPictureCaptchaForStep("manMachine"))
     }
+
+    @Test
+    fun browserRouting_captchaStaysButOtpRateLimitFallsBack() {
+        // Browser login only bypasses OTP: captcha on the trusted id must be
+        // solved in the captcha step, while OTP send rate limit keeps browser.
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("captcha"))
+        assertTrue(
+            LoginViewModel.shouldFallbackToBrowser(
+                "Email OTP is rate-limited by Xiaomi. Wait a while or use browser login.",
+            ),
+        )
+    }
 }
