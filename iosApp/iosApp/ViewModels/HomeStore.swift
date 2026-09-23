@@ -10,6 +10,7 @@ final class HomeStore: ObservableObject {
 
     struct HomeSnapshot {
         var profileName: String = L10n.homeAccount
+        var profileAvatarUrl: String = ""
         var profileError: String?
         var lastSyncLabel: String = L10n.homeNever
         var lastSyncStatusTitle: String = L10n.outcomeNotSynced
@@ -49,6 +50,7 @@ final class HomeStore: ObservableObject {
     private func apply(_ s: HomeUiState) {
         var snap = HomeSnapshot()
         snap.profileName = IosAppBridge.shared.profileName(state: s)
+        snap.profileAvatarUrl = IosAppBridge.shared.profileAvatarUrl(state: s)
         snap.profileError = s.profileError
         snap.lastSyncLabel = s.lastSyncLabel
         snap.lastSyncStatusTitle = s.lastSyncStatusTitle

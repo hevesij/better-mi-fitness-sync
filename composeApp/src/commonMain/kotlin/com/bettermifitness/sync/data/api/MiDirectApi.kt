@@ -372,6 +372,7 @@ class MiDirectApi(private val client: MiDataClient) {
         val obj = element?.jsonObject ?: return null
         return UserProfile(
             name = obj["name"]?.jsonPrimitive?.content,
+            icon = obj["icon"]?.jsonPrimitive?.content,
             sex = obj["sex"]?.jsonPrimitive?.content,
             age = obj["age"]?.jsonPrimitive?.content?.toIntOrNull(),
             height = obj["height"]?.jsonPrimitive?.content?.toIntOrNull(),
