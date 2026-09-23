@@ -70,6 +70,24 @@ class LoginViewModel(
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
                     is LoginResult.OtpRequired -> {
                         otpChallenge = result
+                        // 87001 (2FA) and 81003 (captcha) never produce an email OTP:
+                        // route straight to browser instead of stranding the user.
+                        // A real OTP challenge always carries notificationUrl.
+                        if (result.notificationUrl.isBlank()) {
+                            browserBackGoesToOtp = false
+                            otpChallenge = null
+                            val url = browserLoginUrl()
+                            uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    step = LoginStep.BrowserFallback,
+                                    otpMaskedTarget = "",
+                                    browserLoginUrl = url,
+                                    errorMessage = L10n.text(L10n.loginBrowserRequired),
+                                )
+                            }
+                            return@launch
+                        }
                         try {
                             result.sendOtp()
                             browserBackGoesToOtp = false
@@ -211,6 +229,13 @@ class LoginViewModel(
             uiState.update {
                 it.copy(step = LoginStep.BrowserFallback, errorMessage = null, browserLoginUrl = url)
             }
+        }
+    }
+
+    /** Resolves the per-install browser URL for the UI layer (blank until loaded). */
+    fun openBrowserLogin(onUrl: (String) -> Unit) {
+        viewModelScope.launch {
+            onUrl(browserLoginUrl())
         }
     }
 

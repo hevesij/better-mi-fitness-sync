@@ -29,7 +29,7 @@ sealed class LoginResult {
         internal val password: String,
         internal val sid: String,
         internal val callback: String,
-        internal val notificationUrl: String,
+        val notificationUrl: String,
         val maskedTarget: String,
         val deviceId: String,
     ) : LoginResult() {
