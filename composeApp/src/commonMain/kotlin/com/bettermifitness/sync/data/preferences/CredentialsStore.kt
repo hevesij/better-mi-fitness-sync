@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.mifitness.miclient.auth.MiCredentials
 import com.mifitness.miclient.auth.MiRegion
+import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -35,6 +36,10 @@ class CredentialsStore(
 
     override suspend fun saveCredentials(credentials: MiCredentials) {
         dataStore.edit { preferences ->
+            // Every persist is either a fresh login or a completed passport refresh, i.e. the
+            // moment Xiaomi last rotated our passToken. Stamped so the sync policy can roll
+            // the session forward before the server retires the token we now hold.
+            preferences[SESSION_REFRESHED_AT_KEY] = Clock.System.now().epochSeconds.toString()
             preferences[TOKEN_KEY] = credentials.serviceToken
             preferences[MI_USER_ID_KEY] = credentials.userId
             preferences[SSECURITY_KEY] = credentials.ssecurity
@@ -81,6 +86,9 @@ class CredentialsStore(
         )
     }
 
+    override suspend fun lastSessionRefreshEpochSeconds(): Long? =
+        dataStore.data.first()[SESSION_REFRESHED_AT_KEY]?.toLongOrNull()
+
     /**
      * Persist auto-discovery winner and metadata for Settings.
      */
@@ -111,6 +119,7 @@ class CredentialsStore(
             preferences.remove(PASS_TOKEN_KEY)
             preferences.remove(DEVICE_ID_KEY)
             preferences.remove(C_USER_ID_KEY)
+            preferences.remove(SESSION_REFRESHED_AT_KEY)
         }
     }
 
@@ -126,5 +135,6 @@ class CredentialsStore(
         private val PASS_TOKEN_KEY = stringPreferencesKey("pass_token")
         private val DEVICE_ID_KEY = stringPreferencesKey("device_id")
         private val C_USER_ID_KEY = stringPreferencesKey("c_user_id")
+        private val SESSION_REFRESHED_AT_KEY = stringPreferencesKey("session_refreshed_at")
     }
 }

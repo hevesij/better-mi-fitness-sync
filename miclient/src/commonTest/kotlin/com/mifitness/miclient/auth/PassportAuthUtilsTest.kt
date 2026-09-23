@@ -61,4 +61,40 @@ class PassportAuthUtilsTest {
             PassportAuthUtils.parseContext("https://account.xiaomi.com/x?context=abc&y=1"),
         )
     }
+
+    @Test
+    fun setCookieValue_readsRotatedPassToken() {
+        val headers = listOf(
+            "cUserId=abc; Domain=.xiaomi.com; Path=/; HttpOnly",
+            "passToken=V1:ROTATED; Domain=.xiaomi.com; Path=/; Max-Age=31536000; HttpOnly",
+        )
+        assertEquals("V1:ROTATED", PassportAuthUtils.setCookieValue(headers, "passToken"))
+        assertEquals("abc", PassportAuthUtils.setCookieValue(headers, "cUserId"))
+    }
+
+    @Test
+    fun setCookieValue_ignoresDeletionAndForeignNames() {
+        // `re-pass-token` must not be mistaken for `passToken`, and deletion
+        // cookies must not overwrite a live credential with an empty value.
+        assertEquals(
+            null,
+            PassportAuthUtils.setCookieValue(listOf("re-pass-token=ABC123; Path=/"), "passToken"),
+        )
+        assertEquals(
+            null,
+            PassportAuthUtils.setCookieValue(listOf("passToken=EXPIRED; Path=/"), "passToken"),
+        )
+        assertEquals(
+            null,
+            PassportAuthUtils.setCookieValue(listOf("passToken=x; Max-Age=0; Path=/"), "passToken"),
+        )
+    }
+
+    @Test
+    fun setCookieValue_isCaseInsensitiveOnName() {
+        assertEquals(
+            "tok",
+            PassportAuthUtils.setCookieValue(listOf("PASSTOKEN=tok; Path=/"), "passToken"),
+        )
+    }
 }

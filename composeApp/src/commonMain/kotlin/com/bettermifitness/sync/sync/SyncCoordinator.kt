@@ -118,6 +118,11 @@ class SyncCoordinator(
             return notLoggedInOrSkipped(userInitiated, requireAutoSync)
         }
 
+        // Roll the passport session forward if it has gone stale, before spending work on
+        // Health permissions and metric fetches. Opportunistic: a failure here is not fatal,
+        // the lazy 401 refresh inside the repository still owns error reporting.
+        session.refreshSessionIfStale()
+
         if (!healthAvailability.isAvailable()) {
             return SyncOutcome.HealthUnavailable
         }
