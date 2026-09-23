@@ -33,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +48,6 @@ import com.bettermifitness.sync.ui.components.PrimaryButton
 import com.bettermifitness.sync.ui.components.StickyCtaBar
 import com.bettermifitness.sync.ui.icons.AppIcon
 import com.bettermifitness.sync.ui.icons.AppIcons
-import org.koin.mp.KoinPlatform
 
 /**
  * Home hub (parity with iOS SwiftUI HomeView):
@@ -58,8 +56,12 @@ import org.koin.mp.KoinPlatform
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onSyncClick: () -> Unit, onSettingsClick: () -> Unit, onLogout: () -> Unit) {
-    val viewModel = remember { KoinPlatform.getKoin().get<HomeViewModel>() }
+fun HomeScreen(
+    viewModel: HomeViewModel,
+    onSyncClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(state.loggedOut) {
@@ -76,9 +78,10 @@ fun HomeScreen(onSyncClick: () -> Unit, onSettingsClick: () -> Unit, onLogout: (
     val healthName = state.healthServiceName.ifBlank { L10n.string(L10n.healthFallback) }
     val fullName = state.profile?.result?.name?.trim()?.takeIf { it.isNotEmpty() }
     val titleName = fullName ?: L10n.string(L10n.homeAccount)
-    val canUpdate = state.enabledMetricsCount > 0
+    val canUpdate = state.prefsReady && state.enabledMetricsCount > 0
 
     val primaryLabel = when {
+        !state.prefsReady -> L10n.string(L10n.homeSyncOptions)
         state.healthNeedsAction -> L10n.string(L10n.healthAllowAccess)
         !canUpdate -> L10n.string(L10n.homeOpenSettings)
         state.isSyncing -> L10n.string(L10n.homeSyncing)
@@ -327,6 +330,7 @@ private fun SetupSection(
 }
 
 private fun planSummary(state: HomeUiState): String {
+    if (!state.prefsReady) return L10n.text(L10n.settingsSyncOptionsLoading)
     if (state.enabledMetricsCount == 0) return L10n.text(L10n.homeNoneSelected)
     val metrics = if (state.enabledMetricsCount == 1) {
         L10n.text(L10n.homeMetricOne)

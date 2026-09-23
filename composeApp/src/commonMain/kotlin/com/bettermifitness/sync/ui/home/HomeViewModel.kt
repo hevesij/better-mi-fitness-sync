@@ -7,6 +7,7 @@ import com.bettermifitness.sync.data.MiSessionManager
 import com.bettermifitness.sync.data.api.MeResponse
 import com.bettermifitness.sync.data.preferences.SyncPreferences
 import com.bettermifitness.sync.data.preferences.TokenStore
+import com.bettermifitness.sync.data.preferences.UserPrefsSnapshot
 import com.bettermifitness.sync.health.HealthAvailability
 import com.bettermifitness.sync.health.HealthPermissionRequester
 import com.bettermifitness.sync.health.HealthReadiness
@@ -25,6 +26,8 @@ import kotlinx.coroutines.launch
 data class HomeUiState(
     val profile: MeResponse? = null,
     val profileError: String? = null,
+    /** False until the first hot-snapshot emission — screens hold skeleton. */
+    val prefsReady: Boolean = false,
     val lastSyncLabel: String = L10n.text(L10n.homeNever),
     val lastSyncStatusTitle: String = L10n.text(L10n.outcomeNotSynced),
     val lastSyncDetail: String = L10n.text(L10n.outcomeIdleDetail),
@@ -33,7 +36,7 @@ data class HomeUiState(
     val lastBackgroundLabel: String = L10n.text(L10n.homeNever),
     val lastBackgroundDetail: String = L10n.text(L10n.outcomeIdleDetail),
     val lastBackgroundIsError: Boolean = false,
-    /** 0 until prefs load — do not assume all metrics on (matches Settings). */
+    /** Empty until prefs load — do not assume all metrics on. */
     val enabledMetricsCount: Int = 0,
     val totalMetricsCount: Int = SyncMetric.entries.size,
     val rangeDays: Int = 7,
@@ -54,8 +57,10 @@ class HomeViewModel(
     private val healthAvailability: HealthAvailability,
     private val healthPermissions: HealthPermissionRequester,
     private val syncCoordinator: SyncCoordinator,
+    syncPreferences: SyncPreferences,
 ) : ViewModel() {
-    private val syncPreferences: SyncPreferences get() = tokenStore.sync
+    /** Hot snapshot: single DataStore subscription, shared with all screens. */
+    private val prefsSnapshot: StateFlow<UserPrefsSnapshot> = syncPreferences.snapshot
 
     private val profileState = MutableStateFlow<MeResponse?>(null)
     private val profileErrorState = MutableStateFlow<String?>(null)
@@ -70,40 +75,34 @@ class HomeViewModel(
     )
 
     private val lastSyncPrefs = combine(
-        syncPreferences.lastSyncTime,
-        syncPreferences.lastSyncStatus,
-        syncPreferences.lastSyncMessage,
+        tokenStore.sync.lastSyncTime,
+        tokenStore.sync.lastSyncStatus,
+        tokenStore.sync.lastSyncMessage,
     ) { time, status, message ->
         Triple(time, status, message)
     }
 
     private val lastBgPrefs = combine(
-        syncPreferences.lastBackgroundSyncTime,
-        syncPreferences.lastBackgroundSyncStatus,
-        syncPreferences.lastBackgroundSyncMessage,
+        tokenStore.sync.lastBackgroundSyncTime,
+        tokenStore.sync.lastBackgroundSyncStatus,
+        tokenStore.sync.lastBackgroundSyncMessage,
     ) { time, status, message ->
         Triple(time, status, message)
     }
 
-    private val configPrefs = combine(
-        syncPreferences.enabledMetrics,
-        syncPreferences.syncRangeDays,
-        syncPreferences.autoSync,
-    ) { enabled, rangeDays, autoSync ->
-        Triple(enabled, rangeDays, autoSync)
-    }
-
-    private val prefs = combine(lastSyncPrefs, lastBgPrefs, configPrefs) { lastSync, lastBg, config ->
+    /** Stable config from the hot snapshot; volatile status from outcome prefs. */
+    private val prefs = combine(lastSyncPrefs, lastBgPrefs, prefsSnapshot) { lastSync, lastBg, snap ->
         PrefsSnapshot(
+            ready = snap.ready,
             lastSync = lastSync.first,
             lastSyncStatus = lastSync.second,
             lastSyncMessage = lastSync.third,
             lastBg = lastBg.first,
             lastBgStatus = lastBg.second,
             lastBgMessage = lastBg.third,
-            enabled = config.first,
-            rangeDays = config.second,
-            autoSync = config.third,
+            enabled = snap.enabledMetrics,
+            rangeDays = snap.syncRangeDays,
+            autoSync = snap.autoSync,
         )
     }
 
@@ -113,6 +112,7 @@ class HomeViewModel(
             HomeUiState(
                 profile = profile,
                 profileError = profileError,
+                prefsReady = prefsSnap.ready,
                 lastSyncLabel = RelativeTime.format(prefsSnap.lastSync),
                 lastSyncStatusTitle = SyncOutcomeLabels.title(prefsSnap.lastSyncStatus),
                 lastSyncDetail = SyncOutcomeLabels.detail(
@@ -246,6 +246,7 @@ class HomeViewModel(
     }
 
     private data class PrefsSnapshot(
+        val ready: Boolean,
         val lastSync: String?,
         val lastSyncStatus: String?,
         val lastSyncMessage: String?,
