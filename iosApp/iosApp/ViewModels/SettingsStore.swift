@@ -21,7 +21,6 @@ final class SettingsStore: ObservableObject {
         var lastSyncDetail: String = ""
         var lastSyncIsError: Bool = false
         var lastSyncIsWarning: Bool = false
-        var bgRefreshLabel: String = ""
         var canTestBgRefresh: Bool = false
         var bgTestStatus: String?
         var bgTestRunning: Bool = false
@@ -71,7 +70,6 @@ final class SettingsStore: ObservableObject {
         snap.lastSyncDetail = s.lastSyncDetail
         snap.lastSyncIsError = s.lastSyncIsError
         snap.lastSyncIsWarning = s.lastSyncIsWarning
-        snap.bgRefreshLabel = s.bgRefreshLabel
         snap.canTestBgRefresh = s.canTestBgRefresh
         snap.bgTestStatus = s.bgTestStatus
         snap.bgTestRunning = s.bgTestRunning

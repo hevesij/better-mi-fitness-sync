@@ -40,7 +40,6 @@ data class SettingsUiState(
     val lastSyncDetail: String = L10n.text(L10n.outcomeIdleDetail),
     val lastSyncIsError: Boolean = false,
     val lastSyncIsWarning: Boolean = false,
-    val bgRefreshLabel: String = "",
     val canTestBgRefresh: Boolean = false,
     val bgTestStatus: String? = null,
     val bgTestRunning: Boolean = false,
@@ -68,7 +67,6 @@ class SettingsViewModel(
 
     private val localState = MutableStateFlow(
         LocalSettingsState(
-            bgRefreshLabel = AutoSyncPlatform.backgroundRefreshStatusLabel(),
             canTestBgRefresh = AutoSyncPlatform.supportsOpportunisticRefreshTest(),
             loggedOut = false,
         ),
@@ -122,7 +120,6 @@ class SettingsViewModel(
             lastSyncDetail = SyncOutcomeLabels.detail(lastSync.second, lastSync.third),
             lastSyncIsError = SyncOutcomeLabels.isError(lastSync.second),
             lastSyncIsWarning = SyncOutcomeLabels.isWarning(lastSync.second),
-            bgRefreshLabel = local.bgRefreshLabel,
             canTestBgRefresh = local.canTestBgRefresh,
             bgTestStatus = local.bgTestStatus,
             bgTestRunning = local.bgTestRunning,
@@ -140,7 +137,6 @@ class SettingsViewModel(
         started = SharingStarted.Eagerly,
         initialValue = SettingsUiState(
             prefsReady = false,
-            bgRefreshLabel = localState.value.bgRefreshLabel,
             canTestBgRefresh = localState.value.canTestBgRefresh,
             showShortcutsHelp = showShortcutsHelp,
             healthServiceName = healthAvailability.healthServiceName(),
@@ -244,7 +240,6 @@ class SettingsViewModel(
     }
 
     private data class LocalSettingsState(
-        val bgRefreshLabel: String = "",
         val canTestBgRefresh: Boolean = false,
         val bgTestStatus: String? = null,
         val bgTestRunning: Boolean = false,

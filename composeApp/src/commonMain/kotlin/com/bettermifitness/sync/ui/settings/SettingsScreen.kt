@@ -278,19 +278,6 @@ private fun AutoSyncCard(
             )
         }
 
-        if (state.bgRefreshLabel.isNotBlank()) {
-            HorizontalDivider(
-                Modifier.padding(start = 14.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-            )
-            Text(
-                state.bgRefreshLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            )
-        }
-
         if (state.canTestBgRefresh) {
             HorizontalDivider(
                 Modifier.padding(start = 14.dp),

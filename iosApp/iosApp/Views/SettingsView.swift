@@ -42,11 +42,6 @@ struct SettingsView: View {
                     get: { store.state.autoSync },
                     set: { store.setAutoSync($0) }
                 ))
-                if !store.state.bgRefreshLabel.isEmpty {
-                    Text(store.state.bgRefreshLabel)
-                        .font(.caption)
-                        .foregroundStyle(Brand.secondaryLabel)
-                }
                 if store.state.canTestBgRefresh {
                     Button {
                         store.runBgTest()
