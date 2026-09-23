@@ -96,9 +96,10 @@ enum BackgroundSyncManager {
         print("[BGSync] cancelled \(taskIdentifier) + \(processingIdentifier)")
     }
 
-    /// Diagnostic for Settings. Unlike before, Release also reports the real
-    /// OS permission so "Background App Refresh OFF" is visible on device.
+    /// Debug/simulator-only diagnostic. The OS permission does not indicate this app's Auto-sync state.
     static func backgroundRefreshStatusLabel() -> String {
+        guard isDebugRefreshEnabled else { return "" }
+
         #if targetEnvironment(simulator)
         return L10n.backgroundSimulator
         #else
@@ -130,8 +131,9 @@ enum BackgroundSyncManager {
         }
     }
 
-    /// Begins the finishing assertion; call when the app backgrounds so an
+    /// Begins the finishing assertion; call from scenePhase.background so an
     /// in-flight sync can complete instead of stopping mid-write.
+    /// Wired in iOSApp; kept here so all BGTask-adjacent code stays together.
     static func beginFinishing() {
         guard finishingTask == .invalid else { return }
         finishingTask = UIApplication.shared.beginBackgroundTask(withName: "finish-sync") {

@@ -132,8 +132,6 @@ enum L10n {
     static var settingsLastSync: String { s(strings.settings_last_sync) }
     static var settingsLastBackgroundSync: String { s(strings.settings_last_background_sync) }
     static var settingsShortcutsHelp: String { s(strings.settings_shortcuts_help) }
-    static var backgroundIosNote: String { s(strings.background_ios_note) }
-    static var settingsOpenShortcutsAutomation: String { s(strings.settings_open_shortcuts_automation) }
     static var settingsLogOut: String { s(strings.settings_log_out) }
     static var settingsVersion: String { s(strings.settings_version) }
     static var settingsCredit: String { s(strings.settings_credit) }

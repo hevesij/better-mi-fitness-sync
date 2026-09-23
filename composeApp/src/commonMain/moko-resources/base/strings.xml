@@ -186,8 +186,6 @@
     <string name="settings_last_sync">Last sync</string>
     <string name="settings_last_background_sync">Last background sync</string>
     <string name="settings_shortcuts_help">Use the “Sync Better Mi Fitness” App Intent or Shortcuts for manual background runs.</string>
-    <string name="background_ios_note">iOS decides when background refresh runs — it can be delayed or skipped. For a fixed daily run, create a Shortcuts automation.</string>
-    <string name="settings_open_shortcuts_automation">Set up daily Shortcuts automation</string>
     <string name="settings_log_out">Log out</string>
     <string name="settings_version">Version</string>
     <string name="settings_credit">Credit</string>

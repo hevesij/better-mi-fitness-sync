@@ -17,10 +17,14 @@ actual object AutoSyncPlatform {
         return AutoSyncBridge.invokeStatus()
     }
 
-    /** Release-visible test: runs the 1-day path; submits no BGTask. */
-    actual fun supportsOpportunisticRefreshTest(): Boolean = true
+    /** Debug test control removed from Settings UI; keep false so it never appears. */
+    actual fun supportsOpportunisticRefreshTest(): Boolean = false
 
     actual fun runOpportunisticRefreshTest(onDone: (String) -> Unit) {
+        if (!supportsOpportunisticRefreshTest()) {
+            onDone("skipped")
+            return
+        }
         // Same path as BGAppRefreshTask (last 1 day, requires auto-sync ON).
         BackgroundSync.runOpportunisticBackgroundSync(onDone)
     }
