@@ -27,6 +27,16 @@ class MetaLoginDataTest {
     }
 
     @Test
+    fun fallbackTriplet_usesCallerCallbackAndSynthesizedQs() {
+        // 1.0.2 parity: when the server triplet is unavailable, login replays the
+        // caller callback with a synthesized qs and omits _sign (never blank).
+        val fallback = MetaLoginData(sign = "", qs = "?sid=miothealth&_json=true", callback = "cb")
+        assertTrue(fallback.sign.isEmpty())
+        assertEquals("?sid=miothealth&_json=true", fallback.qs)
+        assertEquals("cb", fallback.callback)
+    }
+
+    @Test
     fun setCookieValue_readsStep1Token() {
         val headers = listOf(
             "cUserId=abc; Domain=.xiaomi.com; Path=/; HttpOnly",
