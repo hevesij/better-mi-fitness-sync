@@ -40,6 +40,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Release variant for tagged GitHub releases; PR builds stay on debug.
+    // Signed with the debug key (no keystore secret needed); the release
+    // build type still applies the real release flags (non-debuggable)
+    // so public downloads never ship a debuggable APK.
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     // Keep all moko locales in the APK/AAB (system language can switch without redownload).
     bundle {
         language {

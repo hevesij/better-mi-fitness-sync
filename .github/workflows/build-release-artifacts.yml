@@ -166,12 +166,27 @@ jobs:
       - name: Unit tests (miclient JVM)
         run: ./gradlew :miclient:androidTest --stacktrace --build-cache --configuration-cache
 
-      - name: Build debug APK
-        run: >
-          ./gradlew :androidApp:assembleDebug
-          -PversionName=${{ env.VERSION_NAME }}
-          -PversionCode=${{ env.VERSION_CODE }}
-          --stacktrace --build-cache --configuration-cache
+      # PR/manual/dispatch builds stay on debug (fast, debuggable);
+      # v* tag builds ship assembleRelease (non-debuggable, debug-signed).
+      - name: Build APK (debug for PR, release for tags)
+        run: |
+          if [ "${{ steps.version.outputs.is_release }}" = "true" ]; then
+            TASK=:androidApp:assembleRelease
+          else
+            TASK=:androidApp:assembleDebug
+          fi
+          ./gradlew "$TASK" \
+            -PversionName=${{ env.VERSION_NAME }} \
+            -PversionCode=${{ env.VERSION_CODE }} \
+            --stacktrace --build-cache --configuration-cache
+          # Sanity: PR artifacts must be debuggable, tag artifacts must not be.
+          APK=$(find androidApp/build/outputs/apk -name "*.apk" | head -1)
+          if [ "${{ steps.version.outputs.is_release }}" = "true" ]; then
+            if "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK" | grep -q "application-debuggable"; then
+              echo "ERROR: release APK is debuggable: $APK"
+              exit 1
+            fi
+          fi
 
       - name: Stage artifact
         run: |
