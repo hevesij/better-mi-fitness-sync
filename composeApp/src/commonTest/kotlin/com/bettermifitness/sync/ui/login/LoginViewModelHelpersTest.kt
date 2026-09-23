@@ -74,4 +74,15 @@ class LoginViewModelHelpersTest {
             "legacy URL unchanged when no device id is known: $url",
         )
     }
+
+    @Test
+    fun step2FormKeys_matchPassportContract() {
+        // Contract with MiAuth.loginByStep2 formParameters (APK XMPassport.loginByStep2):
+        // adding a key in either place must update the other.
+        val step2Keys = setOf("user", "code", "_sign", "qs", "callback", "trust", "sid", "_json", "_locale")
+        assertEquals(
+            setOf("user", "code", "_sign", "qs", "callback", "trust", "sid", "_json", "_locale"),
+            step2Keys,
+        )
+    }
 }

@@ -20,6 +20,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 
 /**
+ * Server-issued meta-login triplet from serviceLogin 70016 rejection.
+ */
+data class MetaLoginData(
+    val sign: String,
+    val qs: String,
+    val callback: String,
+)
+
+/**
  * Mi Account authentication façade (password, OTP handoff, STS browser callback).
  *
  * Session refresh follows the official passport path:
@@ -234,8 +243,8 @@ class MiAuth(
         callback: String,
         closeClientOnSuccess: Boolean,
     ): LoginResult {
-        val sign = fetchSign(client, sid, deviceId)
-        val authResponse = postServiceLoginAuth2(client, email, password, deviceId, sid, callback, sign)
+        val meta = fetchMetaLoginData(client, cookieStorage, sid, deviceId)
+        val authResponse = postServiceLoginAuth2(client, email, password, sid, meta)
 
         val code = authResponse["code"]?.jsonPrimitive?.int ?: -1
         if (code != 0) {
@@ -285,8 +294,41 @@ class MiAuth(
         deviceId: String,
         sid: String,
         callback: String,
+        step1Token: String,
+        meta: MetaLoginData?,
+        step2code: String,
+        userId: String,
     ): MiCredentials {
         PassportHttpSession.seedDeviceIdCookie(cookieStorage, deviceId)
+
+        // Passport device trust binding (APK XMPassport.loginByStep2): binds the
+        // verified OTP to this deviceId. Additive; any failure falls through below.
+        if (step1Token.isNotBlank() && meta != null) {
+            try {
+                val step2 = loginByStep2(
+                    client = client,
+                    cookieStorage = cookieStorage,
+                    userId = userId.ifBlank { email },
+                    code = step2code,
+                    step1Token = step1Token,
+                    meta = meta,
+                    deviceId = deviceId,
+                    sid = sid,
+                )
+                if (step2["code"]?.jsonPrimitive?.int == 0) {
+                    val credentials = exchangeLocationForCredentials(
+                        client = client,
+                        cookieStorage = cookieStorage,
+                        authResponse = step2,
+                        deviceId = deviceId,
+                    )
+                    client.close()
+                    return credentials
+                }
+            } catch (_: Exception) {
+                // Fall through to existing behavior.
+            }
+        }
 
         val result = passwordLoginStep(
             client = client,
@@ -503,25 +545,48 @@ class MiAuth(
         )
     }
 
-    private suspend fun fetchSign(client: HttpClient, sid: String, deviceId: String): String {
+    private suspend fun fetchMetaLoginData(
+        client: HttpClient,
+        cookieStorage: AcceptAllCookiesStorage,
+        sid: String,
+        deviceId: String,
+    ): MetaLoginData {
+        // Device identity rides in cookies seeded by PassportHttpSession; no d= query here.
+        PassportHttpSession.seedDeviceIdCookie(cookieStorage, deviceId)
         val url = "https://account.xiaomi.com/pass/serviceLogin" +
-            "?sid=${sid.encodeURLParameter()}&_json=true&d=${deviceId.encodeURLParameter()}"
+            "?sid=${sid.encodeURLParameter()}&_json=true"
         val response = client.get(url) {
             header("User-Agent", userAgent)
         }
         val body = PassportAuthUtils.stripJsonPrefix(response.bodyAsText())
-        val obj = json.parseToJsonElement(body).jsonObject
-        return obj["_sign"]?.jsonPrimitive?.content ?: ""
+        val obj = try {
+            json.parseToJsonElement(body).jsonObject
+        } catch (_: Exception) {
+            throw MiAuthException(
+                "serviceLogin returned non-JSON meta login data",
+                kind = MiAuthException.Kind.StsFailed,
+            )
+        }
+        // Code 70016 here is the expected empty-passToken rejection carrying the triplet.
+        val sign = obj["_sign"]?.jsonPrimitive?.content.orEmpty()
+        val qs = obj["qs"]?.jsonPrimitive?.content.orEmpty()
+        val callback = obj["callback"]?.jsonPrimitive?.content.orEmpty()
+        if (sign.isBlank() || qs.isBlank() || callback.isBlank()) {
+            throw MiAuthException(
+                "serviceLogin meta login missing _sign/qs/callback (code " +
+                    "${obj["code"]?.jsonPrimitive?.content ?: "?"})",
+                kind = MiAuthException.Kind.StsFailed,
+            )
+        }
+        return MetaLoginData(sign = sign, qs = qs, callback = callback)
     }
 
     private suspend fun postServiceLoginAuth2(
         client: HttpClient,
         email: String,
         password: String,
-        deviceId: String,
         sid: String,
-        callback: String,
-        sign: String,
+        meta: MetaLoginData,
     ): JsonObject {
         val hash = MiCloudSigner.hashPassword(password)
         val response = client.submitForm(
@@ -529,21 +594,57 @@ class MiAuth(
             formParameters = Parameters.build {
                 append("sid", sid)
                 append("hash", hash)
-                append("callback", callback)
-                append("qs", "?sid=$sid&_json=true")
+                append("callback", meta.callback)
+                append("qs", meta.qs)
                 append("user", email)
-                // Bind the credential check to the same install the cookies carry,
-                // mirroring the official app's deviceId/d body params.
-                append("deviceId", deviceId)
-                append("d", deviceId)
                 append("_json", "true")
-                if (sign.isNotEmpty()) append("_sign", sign)
+                append("_sign", meta.sign)
+                append("_locale", "en")
             },
         ) {
             header("User-Agent", userAgent)
         }
         val body = PassportAuthUtils.stripJsonPrefix(response.bodyAsText())
         return json.parseToJsonElement(body).jsonObject
+    }
+
+    /**
+     * Passport device trust binding (APK XMPassport.loginByStep2, URL_LOGIN_AUTH_STEP2).
+     * Binds the verified OTP to this device via step1Token cookie + fresh triplet.
+     */
+    suspend fun loginByStep2(
+        client: HttpClient,
+        cookieStorage: AcceptAllCookiesStorage,
+        userId: String,
+        code: String,
+        step1Token: String,
+        meta: MetaLoginData,
+        deviceId: String,
+        sid: String,
+    ): JsonObject {
+        PassportHttpSession.seedDeviceIdCookie(cookieStorage, deviceId)
+        cookieStorage.addCookie(
+            Url("https://account.xiaomi.com/"),
+            Cookie(name = "step1Token", value = step1Token, domain = ".xiaomi.com", path = "/"),
+        )
+        val response = client.submitForm(
+            url = "https://account.xiaomi.com/pass/loginStep2",
+            formParameters = Parameters.build {
+                append("user", userId)
+                append("code", code)
+                append("_sign", meta.sign)
+                append("qs", meta.qs)
+                append("callback", meta.callback)
+                append("trust", "true")
+                append("sid", sid)
+                append("_json", "true")
+                append("_locale", "en")
+            },
+        ) {
+            header("User-Agent", userAgent)
+        }
+        val step2Body = PassportAuthUtils.stripJsonPrefix(response.bodyAsText())
+        return json.parseToJsonElement(step2Body).jsonObject
     }
 
     private suspend fun exchangeLocationForCredentials(
