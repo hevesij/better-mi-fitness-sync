@@ -111,4 +111,19 @@ class LoginViewModelHelpersTest {
             ),
         )
     }
+
+    @Test
+    fun hasStsGrantParams_detectsFreshGrant() {
+        assertTrue(
+            LoginViewModel.hasStsGrantParams(
+                "https://sts-hlth.io.mi.com/healthapp/sts?d=3E88&ticket=0&pwd=1&auth=abc&_ssign=x&nonce=y",
+            ),
+        )
+        assertFalse(
+            LoginViewModel.hasStsGrantParams(
+                "https://account.xiaomi.com/pass/serviceLogin?sid=miothealth&callback=x",
+            ),
+        )
+        assertFalse(LoginViewModel.hasStsGrantParams(""))
+    }
 }

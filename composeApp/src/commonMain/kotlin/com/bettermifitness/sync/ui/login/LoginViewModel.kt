@@ -358,50 +358,42 @@ class LoginViewModel(
             }
             return
         }
-        // Browser login only bypasses OTP with a trusted device id — it never
-        // solves captcha. Complete the pasted STS grant directly. The password
-        // retry below only runs when STS fails AND a captcha challenge is not
-        // already parked; otherwise the user loops browser -> captcha -> browser.
-        // A fresh captcha retry always runs on the trusted id with the typed code.
+        // Trusted device id alone bypasses OTP: the captcha step retries
+        // password login on that id with the typed code, so a solved picture
+        // logs in without any browser round-trip. Browser is only the OTP
+        // rate-limit escape hatch. STS completion runs only when the pasted
+        // URL carries a fresh grant (pwd= bitmap); a bare login page has none.
         val email = uiState.value.email.trim()
         val password = uiState.value.password
         val trustedDeviceId = extractDeviceId(cleaned)
+        val hasStsGrant = hasStsGrantParams(cleaned)
 
         viewModelScope.launch {
             uiState.update { it.copy(isLoading = true, errorMessage = null) }
             if (trustedDeviceId.isNotBlank()) {
                 credentialsStore.restoreDeviceId(trustedDeviceId)
             }
-            try {
-                val credentials = miAuth.completeFromCallbackUrl(cleaned)
-                persistAndSucceed(credentials)
+            if (hasStsGrant) {
+                try {
+                    val credentials = miAuth.completeFromCallbackUrl(cleaned)
+                    persistAndSucceed(credentials)
+                    return@launch
+                } catch (e: Exception) {
+                    // STS grant present but unusable (expired, no session):
+                    // fall through to the trusted-id password retry below.
+                    uiState.update { it.copy(errorMessage = e.message) }
+                }
+            }
+            if (email.isBlank() || password.isBlank() || trustedDeviceId.isBlank()) {
+                uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "That page has no login grant yet — finish sign-in in the " +
+                            "browser until Xiaomi shows “ok”, then paste the new URL. " +
+                            "Enter email and password here too so the app can retry on the trusted device.",
+                    )
+                }
                 return@launch
-            } catch (e: Exception) {
-                // STS completion failed (no session in grant, expired URL, network).
-                // Retry password login only when credentials exist; a parked
-                // picture challenge takes precedence over a fresh browser error.
-                if (captchaChallenge != null) {
-                    uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            step = LoginStep.Captcha,
-                            errorMessage = e.message
-                                ?: "Could not finish browser login from that URL. Paste the full sts-hlth URL.",
-                        )
-                    }
-                    return@launch
-                }
-                if (email.isBlank() || password.isBlank() || trustedDeviceId.isBlank()) {
-                    uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = e.message
-                                ?: "Could not finish browser login from that URL. Paste the full sts-hlth URL.",
-                        )
-                    }
-                    return@launch
-                }
-                uiState.update { it.copy(errorMessage = e.message) }
             }
             try {
                 when (val result = miAuth.login(email = email, password = password, deviceId = trustedDeviceId)) {
@@ -578,6 +570,17 @@ class LoginViewModel(
 
         fun shouldFallbackToBrowser(message: String): Boolean =
             OTP_BROWSER_HINTS.any { message.contains(it, ignoreCase = true) }
+
+        // A fresh browser grant carries the STS auth bitmap (auth/_ssign/nonce
+        // or ticket); a bare serviceLogin page has none and cannot complete STS.
+        fun hasStsGrantParams(url: String): Boolean {
+            val cleaned = url.trim().lines().firstOrNull { it.isNotBlank() }?.trim() ?: return false
+            val query = cleaned.substringAfter("?", "")
+            if (query.isBlank()) return false
+            val names = query.split("&").map { it.substringBefore("=").lowercase() }.toSet()
+            return names.contains("auth") || names.contains("_ssign") || names.contains("nonce") ||
+                names.contains("ticket")
+        }
 
         /** Shared routing so Compose, iOS, and tests agree on picture vs browser. */
         fun isPictureCaptchaForStep(type: String): Boolean =
