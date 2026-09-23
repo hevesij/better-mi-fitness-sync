@@ -353,33 +353,37 @@ class LoginViewModel(
             }
             return
         }
-        // Browser flow per design: the pasted STS URL carries the browser-trusted
-        // device id (d=). Adopt it as this install's id, then retry email+password
-        // on that id so the OTP challenge is bypassed. Completing STS from the
-        // URL is only a fallback — the browser session is never ours to harvest.
+        // Browser flow: the pasted STS URL is itself the grant — complete it on
+        // this install's device id instead of re-running password login, which
+        // re-triggers captcha/OTP and loops (login -> captcha -> browser -> ...).
         val email = uiState.value.email.trim()
         val password = uiState.value.password
-        if (email.isBlank() || password.isBlank()) {
-            uiState.update {
-                it.copy(
-                    errorMessage = "Enter your email and password first, then paste the browser URL.",
-                )
-            }
-            return
-        }
         val trustedDeviceId = extractDeviceId(cleaned)
-        if (trustedDeviceId.isBlank()) {
-            uiState.update {
-                it.copy(
-                    errorMessage = "That URL has no device id (d=…). Copy the full address bar URL.",
-                )
-            }
-            return
-        }
 
         viewModelScope.launch {
             uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            credentialsStore.restoreDeviceId(trustedDeviceId)
+            if (trustedDeviceId.isNotBlank()) {
+                credentialsStore.restoreDeviceId(trustedDeviceId)
+            }
+            try {
+                val credentials = miAuth.completeFromCallbackUrl(cleaned)
+                persistAndSucceed(credentials)
+                return@launch
+            } catch (e: Exception) {
+                // STS completion failed (expired grant, network): fall through to
+                // the password retry below only when credentials are available.
+                if (email.isBlank() || password.isBlank() || trustedDeviceId.isBlank()) {
+                    uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message
+                                ?: "Could not finish browser login from that URL. Paste the full sts-hlth URL.",
+                        )
+                    }
+                    return@launch
+                }
+                uiState.update { it.copy(errorMessage = e.message) }
+            }
             try {
                 when (val result = miAuth.login(email = email, password = password, deviceId = trustedDeviceId)) {
                     is LoginResult.Success -> persistAndSucceed(result.credentials)
@@ -403,19 +407,24 @@ class LoginViewModel(
                         }
                     }
                     is LoginResult.CaptchaRequired -> {
+                        // STS grant failed and the retry still hits captcha: stay on
+                        // the browser screen with the error instead of looping back
+                        // into the captcha step the user just escaped.
                         otpChallenge = null
-                        enterCaptchaChallenge(result, errorMessage = null)
+                        captchaChallenge = null
+                        browserBackGoesToOtp = false
+                        val url = browserLoginUrl()
+                        uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                step = LoginStep.BrowserFallback,
+                                browserLoginUrl = url,
+                                errorMessage = L10n.text(L10n.loginCaptchaWrong),
+                            )
+                        }
                     }
                 }
                 return@launch
-            } catch (e: Exception) {
-                // Password retry failed (network, rate limit): fall through to the
-                // STS completion below so a valid grant still has a chance.
-                uiState.update { it.copy(errorMessage = e.message) }
-            }
-            try {
-                val credentials = miAuth.completeFromCallbackUrl(cleaned)
-                persistAndSucceed(credentials)
             } catch (e: Exception) {
                 uiState.update {
                     it.copy(
