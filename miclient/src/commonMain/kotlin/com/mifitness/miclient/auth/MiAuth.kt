@@ -316,7 +316,15 @@ class MiAuth(
         callback: String,
         closeClientOnSuccess: Boolean,
     ): LoginResult {
-        val meta = fetchMetaLoginData(client, cookieStorage, sid, deviceId)
+        // Server-issued triplet, with 1.0.2 fallback: fetchMetaLoginData throws
+        // when Xiaomi answers without _sign/qs/callback (seen after OTP verify on
+        // reused sessions). The old fetchSign+synthesized-qs shape still logs in.
+        // Fallback needs the caller's callback (server triplet preferred when present).
+        val meta = try {
+            fetchMetaLoginData(client, cookieStorage, sid, deviceId)
+        } catch (_: Exception) {
+            fetchMetaLoginDataFallback(sid, callback)
+        }
         val authResponse = postServiceLoginAuth2(client, email, password, sid, meta)
 
         val code = authResponse["code"]?.jsonPrimitive?.int ?: -1
@@ -654,6 +662,14 @@ class MiAuth(
         return MetaLoginData(sign = sign, qs = qs, callback = callback)
     }
 
+    /**
+     * 1.0.2 fallback triplet: synthesized qs plus the caller callback, no _sign.
+     * Used when the server-issued triplet is unavailable.
+     */
+    private fun fetchMetaLoginDataFallback(sid: String, callback: String): MetaLoginData {
+        return MetaLoginData(sign = "", qs = "?sid=$sid&_json=true", callback = callback)
+    }
+
     private suspend fun postServiceLoginAuth2(
         client: HttpClient,
         email: String,
@@ -671,7 +687,8 @@ class MiAuth(
                 append("qs", meta.qs)
                 append("user", email)
                 append("_json", "true")
-                append("_sign", meta.sign)
+                // Fallback triplet carries no _sign — omit instead of sending blank.
+                if (meta.sign.isNotEmpty()) append("_sign", meta.sign)
                 append("_locale", "en")
             },
         ) {
