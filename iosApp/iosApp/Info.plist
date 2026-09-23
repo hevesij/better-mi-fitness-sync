@@ -71,10 +71,12 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>processing</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.bettermifitness.sync.refresh</string>
+		<string>com.bettermifitness.sync.processing</string>
 	</array>
 	<!-- Debug/Simulator test: bettermifitness://debug/bg-refresh (handler no-ops in Release) -->
 	<key>CFBundleURLTypes</key>
