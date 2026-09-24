@@ -184,23 +184,6 @@ class LoginViewModel(
         challenge: LoginResult.CaptchaRequired,
         errorMessage: String?,
     ) {
-        if (!challenge.isPictureCaptcha) {
-            viewModelScope.launch {
-                browserBackGoesToOtp = otpChallenge != null
-                captchaChallenge = null
-                val url = browserLoginUrl()
-                uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        captchaLoading = false,
-                        step = LoginStep.BrowserFallback,
-                        browserLoginUrl = url,
-                        errorMessage = L10n.text(L10n.loginCaptchaBrowserRequired),
-                    )
-                }
-            }
-            return
-        }
         captchaChallenge = challenge
         viewModelScope.launch {
             uiState.update {
@@ -321,18 +304,6 @@ class LoginViewModel(
                 uiState.update {
                     it.copy(isLoading = false, errorMessage = e.message ?: L10n.text(L10n.loginFailed))
                 }
-            }
-        }
-    }
-
-    fun goToBrowserFromCaptcha() {
-        // Park the picture challenge but keep it: Back from browser returns to
-        // the captcha step, and its image/ick stay valid on the same session.
-        browserBackGoesToOtp = otpChallenge != null
-        viewModelScope.launch {
-            val url = browserLoginUrl()
-            uiState.update {
-                it.copy(step = LoginStep.BrowserFallback, errorMessage = null, browserLoginUrl = url)
             }
         }
     }
@@ -458,19 +429,12 @@ class LoginViewModel(
     /**
      * Back from browser login:
      * - OTP if the user opened browser from the OTP step
-     * - Captcha if a picture challenge is still parked (image/ick stay valid)
      * - Credentials if OTP was skipped (e.g. email send rate-limited)
      */
     fun goBackFromBrowser() {
         if (browserBackGoesToOtp && otpChallenge != null) {
             uiState.update {
                 it.copy(step = LoginStep.Otp, errorMessage = null)
-            }
-            return
-        }
-        if (captchaChallenge != null) {
-            uiState.update {
-                it.copy(step = LoginStep.Captcha, errorMessage = null)
             }
             return
         }

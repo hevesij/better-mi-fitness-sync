@@ -69,9 +69,7 @@
     <string name="login_captcha_loading">Loading picture…</string>
     <string name="login_captcha_wrong">That code did not match — a fresh picture is shown, try again.</string>
     <string name="login_captcha_empty">Type the code shown in the picture first.</string>
-    <string name="login_captcha_load_failed">Could not load the picture. Refresh or use browser login.</string>
-    <string name="login_captcha_browser_required">Xiaomi needs an interactive check this app cannot show — use browser login instead.</string>
-    <string name="login_captcha_trouble">Can’t read it? Use browser login instead</string>
+    <string name="login_captcha_load_failed">Could not load the picture. Tap New picture and try again.</string>
 
     <!-- Home -->
     <string name="home_account">Your account</string>

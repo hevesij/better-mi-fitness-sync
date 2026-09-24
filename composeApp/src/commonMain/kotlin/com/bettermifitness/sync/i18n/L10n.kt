@@ -112,8 +112,6 @@ object L10n {
     val loginCaptchaWrong get() = MR.strings.login_captcha_wrong
     val loginCaptchaEmpty get() = MR.strings.login_captcha_empty
     val loginCaptchaLoadFailed get() = MR.strings.login_captcha_load_failed
-    val loginCaptchaBrowserRequired get() = MR.strings.login_captcha_browser_required
-    val loginCaptchaTrouble get() = MR.strings.login_captcha_trouble
 
     // Home
     val homeAccount get() = MR.strings.home_account

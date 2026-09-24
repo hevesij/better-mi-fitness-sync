@@ -67,7 +67,6 @@ enum L10n {
     static var loginCaptchaContinue: String { s(strings.login_captcha_continue) }
     static var loginCaptchaRefresh: String { s(strings.login_captcha_refresh) }
     static var loginCaptchaLoading: String { s(strings.login_captcha_loading) }
-    static var loginCaptchaTrouble: String { s(strings.login_captcha_trouble) }
 
     // Home
     static var homeAccount: String { s(strings.home_account) }

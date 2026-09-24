@@ -62,7 +62,6 @@ final class LoginStore: ObservableObject {
     func resendOtp() { vm.resendOtp() }
     func submitCaptcha(_ code: String) { vm.submitCaptcha(code: code) }
     func refreshCaptcha() { vm.refreshCaptcha() }
-    func goToBrowserFromCaptcha() { vm.goToBrowserFromCaptcha() }
     func goBackFromCaptcha() { vm.goBackFromCaptcha() }
     func completeBrowserLogin(_ url: String) { vm.completeBrowserLogin(callbackUrl: url) }
     func goToBrowserFallback() { vm.goToBrowserFallback() }

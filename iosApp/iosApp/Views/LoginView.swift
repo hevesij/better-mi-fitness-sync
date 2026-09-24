@@ -431,14 +431,6 @@ struct LoginView: View {
                 .foregroundStyle(Brand.primary)
                 .disabled(store.isLoading || store.captchaLoading)
 
-                Button(L10n.loginCaptchaTrouble) {
-                    store.goToBrowserFromCaptcha()
-                }
-                .font(.subheadline)
-                .foregroundStyle(Brand.primary)
-                .multilineTextAlignment(.center)
-                .disabled(store.isLoading)
-
                 if let err = store.errorMessage, !err.isEmpty {
                     errorBanner(err)
                 }

@@ -120,7 +120,6 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             errorMessage = state.errorMessage,
             onSubmit = viewModel::submitCaptcha,
             onRefresh = viewModel::refreshCaptcha,
-            onTrouble = viewModel::goToBrowserFromCaptcha,
             onBack = {
                 if (!state.loginSucceeded) viewModel.goBackFromCaptcha()
             },
@@ -453,7 +452,6 @@ private fun CaptchaStep(
     errorMessage: String?,
     onSubmit: (String) -> Unit,
     onRefresh: () -> Unit,
-    onTrouble: () -> Unit,
     onBack: () -> Unit,
 ) {
     var code by remember { mutableStateOf("") }
@@ -529,9 +527,6 @@ private fun CaptchaStep(
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onRefresh, enabled = !busy) {
                 Text(L10n.string(L10n.loginCaptchaRefresh))
-            }
-            TextButton(onClick = onTrouble, enabled = !isLoading) {
-                Text(L10n.string(L10n.loginCaptchaTrouble), textAlign = TextAlign.Center)
             }
 
             ErrorText(errorMessage)
