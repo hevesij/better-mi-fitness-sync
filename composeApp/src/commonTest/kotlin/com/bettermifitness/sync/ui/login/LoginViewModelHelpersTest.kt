@@ -113,17 +113,15 @@ class LoginViewModelHelpersTest {
     }
 
     @Test
-    fun hasStsGrantParams_detectsFreshGrant() {
-        assertTrue(
-            LoginViewModel.hasStsGrantParams(
-                "https://sts-hlth.io.mi.com/healthapp/sts?d=3E88&ticket=0&pwd=1&auth=abc&_ssign=x&nonce=y",
+    fun browserQueryOnly_trustedIdIsTheGrant() {
+        // The pasted browser URL is query-only: d= is the trusted id used to
+        // bypass OTP. No auth/ticket bitmap is required to proceed.
+        assertEquals(
+            "3E886457280657E7",
+            LoginViewModel.extractDeviceId(
+                "https://sts-hlth.io.mi.com/healthapp/sts?d=3E886457280657E7&p_ur=ID",
             ),
         )
-        assertFalse(
-            LoginViewModel.hasStsGrantParams(
-                "https://account.xiaomi.com/pass/serviceLogin?sid=miothealth&callback=x",
-            ),
-        )
-        assertFalse(LoginViewModel.hasStsGrantParams(""))
+        assertEquals("", LoginViewModel.extractDeviceId("https://example.com/?x=1"))
     }
 }
