@@ -330,6 +330,37 @@ class MiAuth(
         }
         val authResponse = postServiceLoginAuth2(client, email, password, sid, meta, captCode, captIck)
 
+        return handleAuthResponse(
+            client = client,
+            cookieStorage = cookieStorage,
+            email = email,
+            password = password,
+            deviceId = deviceId,
+            sid = sid,
+            callback = callback,
+            meta = meta,
+            authResponse = authResponse,
+            closeClientOnSuccess = closeClientOnSuccess,
+        )
+    }
+
+    /**
+     * Shared auth-response routing for the first login and captcha retries.
+     * Retries must call this directly with the challenge meta — never refetch
+     * the triplet, which would orphan the captcha `ick` session binding.
+     */
+    private suspend fun handleAuthResponse(
+        client: HttpClient,
+        cookieStorage: AcceptAllCookiesStorage,
+        email: String,
+        password: String,
+        deviceId: String,
+        sid: String,
+        callback: String,
+        meta: MetaLoginData,
+        authResponse: JsonObject,
+        closeClientOnSuccess: Boolean,
+    ): LoginResult {
         val code = authResponse["code"]?.jsonPrimitive?.int ?: -1
         if (code != 0) {
             val desc = authResponse["desc"]?.jsonPrimitive?.content
@@ -425,6 +456,10 @@ class MiAuth(
         client: HttpClient,
         captchaUrl: String,
     ): LoginResult.CaptchaImage {
+        // The working session shows the server rotates the picture on every
+        // fetch: each getCode answers a new image AND a new ick. Callers must
+        // fetch once per shown picture — never refetch after the user typed a
+        // code — or the submit answers 87001 for a stale image.
         val url = PassportAuthUtils.absCaptchaUrl(captchaUrl)
         if (url.isBlank()) throw MiAuthException("Captcha image URL is missing")
         val response = client.get(url) {
@@ -447,30 +482,34 @@ class MiAuth(
     ): LoginResult {
         if (code.isBlank()) throw MiAuthException("Type the code shown in the picture first")
         if (ick.isBlank()) throw MiAuthException("Captcha session expired — refresh the picture and try again")
+        // Post the retry on the SAME session: reseed device id + ick into the
+        // challenge jar, reuse the challenge meta. The working Reqable session
+        // posts deviceId + ick cookies with captCode and the original triplet.
+        PassportHttpSession.seedDeviceIdCookie(challenge.cookieStorage, challenge.deviceId)
         PassportHttpSession.seedIckCookie(challenge.cookieStorage, ick)
-        return try {
-            passwordLoginStep(
-                client = challenge.client,
-                cookieStorage = challenge.cookieStorage,
-                email = challenge.email,
-                password = challenge.password,
-                deviceId = challenge.deviceId,
-                sid = challenge.sid,
-                callback = challenge.callback,
-                closeClientOnSuccess = false,
-                captCode = code,
-                captIck = ick,
-            )
-        } catch (e: MiAuthException) {
-            if (e.businessCode == 87001) {
-                throw MiAuthException(
-                    PassportAuthUtils.friendlyCaptchaError(e.businessCode, e.message ?: ""),
-                    kind = MiAuthException.Kind.InvalidCredential,
-                    businessCode = e.businessCode,
-                )
-            }
-            throw e
-        }
+        // Same client, same cookies, same challenge meta: a fresh serviceLogin
+        // triplet would mint a new session the ick does not belong to.
+        val authResponse = postServiceLoginAuth2(
+            client = challenge.client,
+            email = challenge.email,
+            password = challenge.password,
+            sid = challenge.sid,
+            meta = challenge.meta,
+            captCode = code,
+            captIck = ick,
+        )
+        return handleAuthResponse(
+            client = challenge.client,
+            cookieStorage = challenge.cookieStorage,
+            email = challenge.email,
+            password = challenge.password,
+            deviceId = challenge.deviceId,
+            sid = challenge.sid,
+            callback = challenge.callback,
+            meta = challenge.meta,
+            authResponse = authResponse,
+            closeClientOnSuccess = false,
+        )
     }
 
     override suspend fun finishLoginAfterOtp(
@@ -793,16 +832,20 @@ class MiAuth(
         captIck: String = "",
     ): JsonObject {
         val hash = MiCloudSigner.hashPassword(password)
+        // APK ByPassword: _sign/qs/callback are injected at request time from the
+        // challenge meta, AFTER captCode is already in the params. A solved captcha
+        // retry must therefore reuse the challenge meta, never a fresh triplet —
+        // the fresh triplet belongs to a new session the ick does not match.
         val response = client.submitForm(
             url = "https://account.xiaomi.com/pass/serviceLoginAuth2",
             formParameters = Parameters.build {
                 append("sid", sid)
                 append("hash", hash)
+                if (captCode.isNotBlank()) append("captCode", captCode)
                 append("callback", meta.callback)
                 append("qs", meta.qs)
                 append("user", email)
                 append("_json", "true")
-                if (captCode.isNotBlank()) append("captCode", captCode)
                 // Fallback triplet carries no _sign — omit instead of sending blank.
                 if (meta.sign.isNotEmpty()) append("_sign", meta.sign)
                 append("_locale", "en")

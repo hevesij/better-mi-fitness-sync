@@ -207,8 +207,8 @@ class LoginViewModel(
                 it.copy(
                     isLoading = false,
                     step = LoginStep.Captcha,
-                    captchaImage = null,
-                    captchaIck = "",
+                    // Keep the current image until the fresh one arrives: the
+                    // code the user types always belongs to the shown picture.
                     captchaLoading = true,
                     errorMessage = errorMessage,
                 )

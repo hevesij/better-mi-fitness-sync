@@ -61,7 +61,9 @@ class PassportAuthUtilsTest {
         assertTrue(PassportAuthUtils.isPictureCaptchaType(""))
         assertTrue(PassportAuthUtils.isPictureCaptchaType("captcha"))
         assertTrue(PassportAuthUtils.isPictureCaptchaType("captchaView"))
-        assertFalse(PassportAuthUtils.isPictureCaptchaType("manMachine"))
+        // Working Reqable session: manMachine still serves a typed picture
+        // (getCode image + captCode retry) before any behavioral step.
+        assertTrue(PassportAuthUtils.isPictureCaptchaType("manMachine"))
     }
 
     @Test

@@ -34,9 +34,9 @@ object PassportAuthUtils {
         return if (url.startsWith("http")) url else "$ACCOUNT_DOMAIN$url"
     }
 
-    /** Picture codes the user can type; manMachine needs the browser flow. */
+    /** Picture codes the user can type; blank type is also a picture (working session proves it). */
     fun isPictureCaptchaType(type: String): Boolean =
-        type.isBlank() || type == "captcha" || type == "captchaView"
+        type.isBlank() || type == "captcha" || type == "captchaView" || type == "manMachine"
 
     fun resolveRegion(countryCode: String): String = when (countryCode.uppercase()) {
         "CN" -> "cn"

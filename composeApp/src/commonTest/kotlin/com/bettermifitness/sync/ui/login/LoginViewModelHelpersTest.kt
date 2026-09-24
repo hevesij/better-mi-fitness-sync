@@ -97,7 +97,8 @@ class LoginViewModelHelpersTest {
         assertTrue(LoginViewModel.isPictureCaptchaForStep(""))
         assertTrue(LoginViewModel.isPictureCaptchaForStep("captcha"))
         assertTrue(LoginViewModel.isPictureCaptchaForStep("captchaView"))
-        assertFalse(LoginViewModel.isPictureCaptchaForStep("manMachine"))
+        // Working session: manMachine also starts as a typed picture.
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("manMachine"))
     }
 
     @Test
