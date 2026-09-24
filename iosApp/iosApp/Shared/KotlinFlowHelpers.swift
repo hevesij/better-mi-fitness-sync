@@ -19,6 +19,17 @@ final class FlowSubscription {
     }
 }
 
+/// Converts a Kotlin `ByteArray` image payload into Swift `Data`.
+extension KotlinByteArray {
+    func asSwiftData() -> Data {
+        var bytes = [UInt8](repeating: 0, count: Int(size))
+        for i in 0..<size {
+            bytes[Int(i)] = UInt8(truncatingIfNeeded: get(index: i))
+        }
+        return Data(bytes)
+    }
+}
+
 /// SF Symbol names for Mi metric keys.
 enum MetricSymbol {
     static func name(for key: String) -> String {

@@ -16,6 +16,7 @@ object PassportAuthUtils {
 
     const val DEFAULT_SID = "miothealth"
     const val DEFAULT_STS_CALLBACK = "https://sts-hlth.io.mi.com/healthapp/sts"
+    const val ACCOUNT_DOMAIN = "https://account.xiaomi.com"
     const val DEFAULT_USER_AGENT = "APP/com.xiaomi.miwatch.pro APPV/3.49.1 " +
         "iosPassportSDK/4.2.64 iOS/18.7.8 MK/aVBob25lMTQsMw== " +
         "DEVT/aVBob25l DEVS/aU9T BRA/QXBwbGU= L/en_US miHSTS"
@@ -26,6 +27,16 @@ object PassportAuthUtils {
         if (url.isEmpty()) return ""
         return if (url.startsWith("http")) url else "https://account.xiaomi.com$url"
     }
+
+    /** Resolves a server captcha path against the account domain (APK ACCOUNT_DOMAIN). */
+    fun absCaptchaUrl(url: String): String {
+        if (url.isEmpty()) return ""
+        return if (url.startsWith("http")) url else "$ACCOUNT_DOMAIN$url"
+    }
+
+    /** Picture codes the user can type; blank type is also a picture (working session proves it). */
+    fun isPictureCaptchaType(type: String): Boolean =
+        type.isBlank() || type == "captcha" || type == "captchaView" || type == "manMachine"
 
     fun resolveRegion(countryCode: String): String = when (countryCode.uppercase()) {
         "CN" -> "cn"
@@ -53,6 +64,12 @@ object PassportAuthUtils {
     fun friendlySendOtpError(code: Int, desc: String): String = when (code) {
         70022 -> "Email OTP is rate-limited by Xiaomi. Wait a while or use browser login."
         else -> "Could not send verification email (code $code): $desc"
+    }
+
+    fun friendlyCaptchaError(code: Int, desc: String): String = when (code) {
+        87001 -> "That code did not match the picture — a fresh picture is shown, try again."
+        70022 -> "Captcha is rate-limited by Xiaomi. Wait a few minutes, or use browser login."
+        else -> "Captcha check failed (code $code): $desc"
     }
 
     fun extractCookieValue(setCookieHeaders: List<String>?, name: String): String? {

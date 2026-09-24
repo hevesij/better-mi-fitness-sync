@@ -5,6 +5,7 @@ import SwiftUI
 struct LoginView: View {
     @StateObject private var store = LoginStore()
     @State private var otpCode = ""
+    @State private var captchaCode = ""
     @State private var browserUrl = ""
     @State private var loginUrlCopied = false
     /// Shown when Paste is tapped but clipboard has nothing usable.
@@ -14,7 +15,7 @@ struct LoginView: View {
     var onSuccess: () -> Void
 
     private enum Field {
-        case email, password, otp, browserUrl
+        case email, password, otp, captcha, browserUrl
     }
 
     /// Same Xiaomi login URL as Compose `LoginScreen.LOGIN_URL`.
@@ -32,6 +33,8 @@ struct LoginView: View {
                 switch store.step {
                 case "Otp":
                     otpStep
+                case "Captcha":
+                    captchaStep
                 case "BrowserFallback":
                     browserStep
                 default:
@@ -49,6 +52,7 @@ struct LoginView: View {
         .onChange(of: store.step) { newStep in
             // Reset local fields when leaving a step so back/forward stays clean.
             if newStep != "Otp" { otpCode = "" }
+            if newStep != "Captcha" { captchaCode = "" }
             if newStep != "BrowserFallback" {
                 browserUrl = ""
                 loginUrlCopied = false
@@ -354,6 +358,114 @@ struct LoginView: View {
         guard canVerifyOtp else { return }
         focusedField = nil
         store.verifyOtp(otpCode)
+    }
+
+    // MARK: - Step 2b: Picture captcha
+
+    private var captchaStep: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                Text(L10n.loginCaptchaDetail)
+                    .font(.subheadline)
+                    .foregroundStyle(Brand.secondaryLabel)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 12)
+
+                Group {
+                    if store.captchaLoading {
+                        ProgressView(L10n.loginCaptchaLoading)
+                    } else if let data = store.captchaImage,
+                              let image = UIImage(data: data) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, minHeight: 96, maxHeight: 140)
+                            .background(Brand.fieldBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Brand.separator, lineWidth: 1)
+                            )
+                    } else {
+                        Button(L10n.loginCaptchaRefresh) {
+                            store.refreshCaptcha()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Brand.primary)
+                        .disabled(store.isLoading)
+                    }
+                }
+
+                loginField(title: L10n.loginCaptchaCode) {
+                    TextField(
+                        "",
+                        text: $captchaCode,
+                        prompt: Text(L10n.loginCaptchaCode)
+                            .foregroundColor(Brand.placeholder)
+                    )
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(Brand.label)
+                    .tint(Brand.primary)
+                    .submitLabel(.go)
+                    .focused($focusedField, equals: .captcha)
+                    .onSubmit { attemptSubmitCaptcha() }
+                }
+
+                Button {
+                    attemptSubmitCaptcha()
+                } label: {
+                    if store.isLoading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text(L10n.loginCaptchaContinue)
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle(enabled: canSubmitCaptcha))
+                .disabled(!canSubmitCaptcha)
+
+                Button(L10n.loginCaptchaRefresh) {
+                    store.refreshCaptcha()
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Brand.primary)
+                .disabled(store.isLoading || store.captchaLoading)
+
+                if let err = store.errorMessage, !err.isEmpty {
+                    errorBanner(err)
+                }
+
+                Spacer(minLength: 24)
+            }
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle(L10n.loginCaptchaTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    store.goBackFromCaptcha()
+                } label: {
+                    Image(systemName: "chevron.backward")
+                }
+                .accessibilityLabel(L10n.back)
+                .disabled(store.isLoading)
+            }
+        }
+    }
+
+    private var canSubmitCaptcha: Bool {
+        !store.isLoading && !store.captchaLoading
+            && !captchaCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && store.captchaImage != nil
+    }
+
+    private func attemptSubmitCaptcha() {
+        guard canSubmitCaptcha else { return }
+        focusedField = nil
+        store.submitCaptcha(captchaCode)
     }
 
     // MARK: - Step 3: Browser fallback (two phases + icon actions)

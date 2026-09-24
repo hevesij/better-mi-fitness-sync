@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalUriHandler
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.bettermifitness.sync.i18n.L10n
 import com.bettermifitness.sync.platform.getPlainText
 import com.bettermifitness.sync.platform.loginKeyboardOptions
@@ -108,6 +110,18 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             onTrouble = viewModel::goToBrowserFallback,
             onBack = {
                 if (!state.loginSucceeded) viewModel.goBackToCredentials()
+            },
+        )
+
+        LoginStep.Captcha -> CaptchaStep(
+            image = state.captchaImage,
+            imageLoading = state.captchaLoading,
+            isLoading = state.isLoading,
+            errorMessage = state.errorMessage,
+            onSubmit = viewModel::submitCaptcha,
+            onRefresh = viewModel::refreshCaptcha,
+            onBack = {
+                if (!state.loginSucceeded) viewModel.goBackFromCaptcha()
             },
         )
 
@@ -426,8 +440,139 @@ private fun OtpStep(
 }
 
 // ============================================================
-// Step 2b: Browser Fallback (parity with iOS LoginView)
+// Step 2b: Picture captcha (user-solved)
 // ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CaptchaStep(
+    image: ByteArray?,
+    imageLoading: Boolean,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onSubmit: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    val busy = isLoading || imageLoading
+
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text(L10n.string(L10n.loginCaptchaTitle), fontWeight = FontWeight.SemiBold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack, enabled = !isLoading) {
+                        AppIcon(AppIcons.ArrowBack, contentDescription = L10n.string(L10n.back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                L10n.string(L10n.loginCaptchaDetail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            CaptchaImageBox(image = image, loading = imageLoading, onRefresh = onRefresh)
+
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it.trim().take(12) },
+                label = { Text(L10n.string(L10n.loginCaptchaCode)) },
+                keyboardOptions = loginKeyboardOptions(KeyboardType.Text, ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (code.isNotBlank() && !busy) onSubmit(code) },
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = { onSubmit(code) },
+                enabled = !busy && code.isNotBlank() && image != null,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = BrandShapes.Button,
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    Text(L10n.string(L10n.loginCaptchaContinue), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onRefresh, enabled = !busy) {
+                Text(L10n.string(L10n.loginCaptchaRefresh))
+            }
+
+            ErrorText(errorMessage)
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun CaptchaImageBox(image: ByteArray?, loading: Boolean, onRefresh: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(120.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            when {
+                loading -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            L10n.string(L10n.loginCaptchaLoading),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                image != null -> {
+                    AsyncImage(
+                        model = image,
+                        contentDescription = L10n.string(L10n.loginCaptchaTitle),
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                    )
+                }
+                else -> {
+                    TextButton(onClick = onRefresh) {
+                        Text(L10n.string(L10n.loginCaptchaRefresh))
+                    }
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

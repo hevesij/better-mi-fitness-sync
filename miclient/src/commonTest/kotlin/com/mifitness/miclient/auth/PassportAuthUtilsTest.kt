@@ -2,6 +2,7 @@ package com.mifitness.miclient.auth
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PassportAuthUtilsTest {
@@ -44,6 +45,30 @@ class PassportAuthUtilsTest {
     fun friendlyLoginError_mapsKnownCodes() {
         assertTrue(PassportAuthUtils.friendlyLoginError(70016, "x").contains("password", ignoreCase = true))
         assertTrue(PassportAuthUtils.friendlyLoginError(70022, "x").contains("rate", ignoreCase = true))
+    }
+
+    @Test
+    fun absCaptchaUrl_resolvesRelativeAgainstAccountDomain() {
+        assertEquals(
+            "https://account.xiaomi.com/pass/getCode?icodeType=login",
+            PassportAuthUtils.absCaptchaUrl("/pass/getCode?icodeType=login"),
+        )
+        assertEquals("", PassportAuthUtils.absCaptchaUrl(""))
+    }
+
+    @Test
+    fun isPictureCaptchaType_acceptsTypableCodesOnly() {
+        assertTrue(PassportAuthUtils.isPictureCaptchaType(""))
+        assertTrue(PassportAuthUtils.isPictureCaptchaType("captcha"))
+        assertTrue(PassportAuthUtils.isPictureCaptchaType("captchaView"))
+        // Working Reqable session: manMachine still serves a typed picture
+        // (getCode image + captCode retry) before any behavioral step.
+        assertTrue(PassportAuthUtils.isPictureCaptchaType("manMachine"))
+    }
+
+    @Test
+    fun friendlyCaptchaError_mapsWrongCode() {
+        assertTrue(PassportAuthUtils.friendlyCaptchaError(87001, "x").contains("picture", ignoreCase = true))
     }
 
     @Test

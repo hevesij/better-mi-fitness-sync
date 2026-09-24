@@ -85,4 +85,44 @@ class LoginViewModelHelpersTest {
             step2Keys,
         )
     }
+
+    @Test
+    fun captchaStep_existsForPictureChallenge() {
+        // LoginStep.Captcha must exist so 87001 picture codes have a UI target.
+        assertTrue(LoginStep.entries.map { it.name }.contains("Captcha"))
+    }
+
+    @Test
+    fun pictureCaptchaTypes_routeToCaptchaStep() {
+        assertTrue(LoginViewModel.isPictureCaptchaForStep(""))
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("captcha"))
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("captchaView"))
+        // Working session: manMachine also starts as a typed picture.
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("manMachine"))
+    }
+
+    @Test
+    fun browserRouting_captchaStaysButOtpRateLimitFallsBack() {
+        // Browser login only bypasses OTP: captcha on the trusted id must be
+        // solved in the captcha step, while OTP send rate limit keeps browser.
+        assertTrue(LoginViewModel.isPictureCaptchaForStep("captcha"))
+        assertTrue(
+            LoginViewModel.shouldFallbackToBrowser(
+                "Email OTP is rate-limited by Xiaomi. Wait a while or use browser login.",
+            ),
+        )
+    }
+
+    @Test
+    fun browserQueryOnly_trustedIdIsTheGrant() {
+        // The pasted browser URL is query-only: d= is the trusted id used to
+        // bypass OTP. No auth/ticket bitmap is required to proceed.
+        assertEquals(
+            "3E886457280657E7",
+            LoginViewModel.extractDeviceId(
+                "https://sts-hlth.io.mi.com/healthapp/sts?d=3E886457280657E7&p_ur=ID",
+            ),
+        )
+        assertEquals("", LoginViewModel.extractDeviceId("https://example.com/?x=1"))
+    }
 }

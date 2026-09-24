@@ -112,6 +112,17 @@ class MetaLoginDataTest {
         var lastStep1Token = ""
         var lastMeta: MetaLoginData? = null
 
+        override suspend fun fetchCaptchaImage(
+            client: HttpClient,
+            captchaUrl: String,
+        ): LoginResult.CaptchaImage = LoginResult.CaptchaImage(byteArrayOf(1, 2, 3), "ick")
+
+        override suspend fun loginWithCaptcha(
+            challenge: LoginResult.CaptchaRequired,
+            code: String,
+            ick: String,
+        ): LoginResult = LoginResult.Success(canned)
+
         override suspend fun finishLoginAfterOtp(
             client: HttpClient,
             cookieStorage: AcceptAllCookiesStorage,

@@ -13,6 +13,8 @@ final class LoginStore: ObservableObject {
     @Published private(set) var loginSucceeded: Bool = false
     /// Per-install browser login URL (carries stable d= device id, empty until loaded).
     @Published private(set) var browserLoginUrl: String = ""
+    @Published private(set) var captchaImage: Data?
+    @Published private(set) var captchaLoading: Bool = false
 
     private let vm: LoginViewModel
     private var subscription: FlowSubscription?
@@ -41,6 +43,8 @@ final class LoginStore: ObservableObject {
         otpMaskedTarget = state.otpMaskedTarget
         loginSucceeded = state.loginSucceeded
         browserLoginUrl = state.browserLoginUrl
+        captchaImage = state.captchaImage?.asSwiftData()
+        captchaLoading = state.captchaLoading
     }
 
     func onEmailChange(_ value: String) {
@@ -56,6 +60,9 @@ final class LoginStore: ObservableObject {
     func signIn() { vm.signIn() }
     func verifyOtp(_ code: String) { vm.verifyOtp(code: code) }
     func resendOtp() { vm.resendOtp() }
+    func submitCaptcha(_ code: String) { vm.submitCaptcha(code: code) }
+    func refreshCaptcha() { vm.refreshCaptcha() }
+    func goBackFromCaptcha() { vm.goBackFromCaptcha() }
     func completeBrowserLogin(_ url: String) { vm.completeBrowserLogin(callbackUrl: url) }
     func goToBrowserFallback() { vm.goToBrowserFallback() }
     func goBackToCredentials() { vm.goBackToCredentials() }

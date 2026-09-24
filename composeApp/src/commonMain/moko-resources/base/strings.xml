@@ -61,6 +61,15 @@
     <string name="login_browser_finish_failed">Could not finish browser login from that URL. Paste the full sts-hlth URL.</string>
     <string name="login_missing_pass_token">Login did not return a passToken, so the app cannot stay signed in across days. Try again or use the other login method.</string>
     <string name="login_missing_device_id">Login missing device id — try again.</string>
+    <string name="login_captcha_title">Type the picture code</string>
+    <string name="login_captcha_detail">Xiaomi asks for a picture check before signing in. Type the code, then continue.</string>
+    <string name="login_captcha_code">Picture code</string>
+    <string name="login_captcha_continue">Continue</string>
+    <string name="login_captcha_refresh">New picture</string>
+    <string name="login_captcha_loading">Loading picture…</string>
+    <string name="login_captcha_wrong">That code did not match — a fresh picture is shown, try again.</string>
+    <string name="login_captcha_empty">Type the code shown in the picture first.</string>
+    <string name="login_captcha_load_failed">Could not load the picture. Tap New picture and try again.</string>
 
     <!-- Home -->
     <string name="home_account">Your account</string>

@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.http.Cookie
+import io.ktor.http.CookieEncoding
 import io.ktor.http.Url
 
 /**
@@ -41,5 +42,22 @@ object PassportHttpSession {
                 )
             }
         }
+    }
+
+    /** Seeds the captcha `ick` token so the retry posts on the same session. */
+    suspend fun seedIckCookie(storage: AcceptAllCookiesStorage, ick: String) {
+        if (ick.isEmpty()) return
+        // The ick value carries base64 padding (+/=) that must survive verbatim;
+        // Ktor re-encodes cookie values, so store the raw value exactly once.
+        storage.addCookie(
+            Url("https://account.xiaomi.com/"),
+            Cookie(
+                name = "ick",
+                value = ick,
+                encoding = CookieEncoding.RAW,
+                domain = ".xiaomi.com",
+                path = "/",
+            ),
+        )
     }
 }
