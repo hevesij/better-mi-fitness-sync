@@ -28,8 +28,8 @@ elif [[ "$input" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
   VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
   IS_RELEASE=true
 else
-  VERSION_NAME="${VERSION_NAME:-1.0.4}"
-  VERSION_CODE="${VERSION_CODE:-1000004}"
+  VERSION_NAME="${VERSION_NAME:-1.0.5}"
+  VERSION_CODE="${VERSION_CODE:-1000005}"
   IS_RELEASE=false
 fi
 
